@@ -1,0 +1,9 @@
+# Le service worker doit toujours être re-vérifié par le navigateur pour que
+# les mises à jour (comme les correctifs de routing) arrivent rapidement sur
+# les appareils déjà visités, au lieu de rester bloqués sur une ancienne
+# version en cache pendant des heures/jours.
+/sw.js
+  Cache-Control: no-cache
+
+/registerSW.js
+  Cache-Control: no-cache

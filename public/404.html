@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Alfred</title>
+    <!--
+      GitHub Pages ne sait pas réécrire les routes profondes vers index.html
+      (pas d'équivalent du _redirects Netlify). Astuce standard "spa-github-pages" :
+      on encode le chemin demandé dans la query string puis on redirige vers la
+      racine de l'app (/alfred-app/), qui décode et restaure l'URL réelle
+      (cf. script correspondant dans index.html). Ne concerne que le tout premier
+      chargement d'un lien profond avant que le service worker ne prenne le relais.
+    -->
+    <script type="text/javascript">
+      var pathSegmentsToKeep = 1; // /alfred-app/
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>

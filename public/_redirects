@@ -1,0 +1,5 @@
+# Les prototypes statiques (hors de l'app React) doivent être servis tels
+# quels — sans ça, la règle catch-all plus bas les redirige toujours vers
+# l'app principale avant même de vérifier si le fichier existe.
+/prototype-ocr-drive/*   /prototype-ocr-drive/:splat   200
+/*    /index.html   200

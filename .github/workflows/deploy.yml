@@ -56,3 +56,7 @@ jobs:
       - name: Publier sur GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+# Redéploiement forcé après réinitialisation de la source Pages (bascule
+# "Deploy from a branch" -> "GitHub Actions" pour stopper le workflow
+# fantôme "pages build and deployment" qui écrasait ce déploiement.

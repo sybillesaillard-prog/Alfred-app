@@ -4,9 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-// Hébergé sur GitHub Pages sous /alfred-app/ (dépôt sybillesaillard-prog/alfred-app),
+// Hébergé sur GitHub Pages sous /Alfred-app/ (dépôt sybillesaillard-prog/Alfred-app),
 // migration du 21/08/2026 depuis Netlify — cf. claude/app-alfred-notes.md.
-const BASE_PATH = '/alfred-app/';
+// Important : la casse doit correspondre EXACTEMENT au nom du dépôt GitHub
+// ("Alfred-app", avec un A majuscule) — GitHub Pages sert les fichiers avec
+// un chemin sensible à la casse, donc un base path en minuscules cassait le
+// chargement de tous les assets (JS/CSS renvoyés en 503) malgré un build réussi.
+const BASE_PATH = '/Alfred-app/';
 
 export default defineConfig({
   base: BASE_PATH,

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Landmark, ClipboardList, EyeOff, RotateCcw } from "lucide-react";
 import { txSignature, matchTransactions } from "../lib/bankTx";
+import { useCollection } from "../lib/useCollection";
 
 const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 const todayISO = () => new Date().toISOString().slice(0, 10);

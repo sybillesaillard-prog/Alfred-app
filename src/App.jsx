@@ -7,6 +7,7 @@ import Layout from "./components/Layout";
 import Expenses from "./pages/Expenses";
 import Tasks from "./pages/Tasks";
 import FixedCharges from "./pages/FixedCharges";
+import VariableCharges from "./pages/VariableCharges";
 
 function LoadingScreen() {
   return (
@@ -28,6 +29,7 @@ function AuthGate() {
         <Route index element={<Navigate to="/depenses" replace />} />
         <Route path="/depenses" element={<Expenses />} />
         <Route path="/charges-fixes" element={<FixedCharges />} />
+        <Route path="/charges-variables" element={<VariableCharges />} />
         <Route path="/taches" element={<Tasks />} />
       </Route>
       <Route path="*" element={<Navigate to="/depenses" replace />} />

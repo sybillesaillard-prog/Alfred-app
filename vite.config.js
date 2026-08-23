@@ -50,11 +50,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        // Les fichiers du moteur OCR (worker/core wasm ~4 Mo) ne doivent pas
-        // être forcés dans le pré-cache obligatoire de l'app — ils ne sont
-        // utiles que lors d'une capture de ticket, pas à chaque ouverture.
-        // Ils seront simplement chargés à la demande par le navigateur.
-        globIgnores: ['**/tesseract/**'],
+        // Les fichiers du moteur OCR (worker/core wasm ~4 Mo) et la
+        // bibliothèque d'export XLS (exceljs, ~900 Ko, chargée à la demande
+        // via import() uniquement au clic sur "Exporter en XLS") ne doivent
+        // pas être forcés dans le pré-cache obligatoire de l'app — ils ne
+        // sont utiles qu'à l'usage de ces fonctionnalités précises, pas à
+        // chaque ouverture. Ils seront simplement chargés à la demande.
+        globIgnores: ['**/tesseract/**', '**/exceljs*'],
         // Le service worker intercepte toutes les requêtes de navigation et
         // les fait retomber sur l'app React (index.html) — ce qui écrasait
         // silencieusement les pages de prototype statiques comme

@@ -9,10 +9,18 @@ import { round2 } from "./vat";
 let workerPromise = null;
 function getWorker(onProgress) {
   if (!workerPromise) {
+    // Chemins relatifs à la racine du SITE (import.meta.env.BASE_URL, ex.
+    // "/Alfred-app/" sur GitHub Pages), PAS à la racine du domaine — un
+    // chemin absolu codé en dur ("/tesseract/...") pointait vers la racine
+    // du domaine github.io et renvoyait des 404 depuis la migration de
+    // Netlify (hébergé à la racine, donc "/tesseract/..." fonctionnait par
+    // coïncidence) vers GitHub Pages (servi sous /Alfred-app/) le 21/08/2026
+    // — cause du message "Lecture automatique impossible" en production.
+    const base = import.meta.env.BASE_URL || "/";
     workerPromise = createWorker("fra", 1, {
-      workerPath: "/tesseract/worker.min.js",
-      corePath: "/tesseract/tesseract-core-simd-lstm.wasm.js",
-      langPath: "/tesseract/lang-data",
+      workerPath: `${base}tesseract/worker.min.js`,
+      corePath: `${base}tesseract/tesseract-core-simd-lstm.wasm.js`,
+      langPath: `${base}tesseract/lang-data`,
       gzip: true,
       logger: onProgress,
     });

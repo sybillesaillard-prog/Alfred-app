@@ -22,6 +22,7 @@ import {
   getMailTasksSyncState,
   setMailboxes as saveMailboxesConfig,
   setMailboxLastCheckedAt,
+  resetMailboxLastCheckedAt,
   makeMailboxKey,
 } from "../lib/mailTasksSync";
 import {
@@ -194,6 +195,19 @@ export default function MailTasks() {
     setSyncState((s) => ({ ...s, mailboxes: updated }));
   };
 
+  // Oublie la dernière vérification d'une boîte (26/08/2026, demande de
+  // Sybille — des mails plus anciens auxquels elle n'avait pas répondu
+  // n'apparaissaient jamais, car "Vérifier mes mails" ne cherche que depuis
+  // la dernière vérification mémorisée). La vérification suivante pour
+  // cette boîte retombe alors sur le repli "jamais vérifiée" (fenêtre de 3
+  // mois, jusqu'à 150 candidats — cf. mailboxAuth.js) au lieu de rester
+  // bloquée sur une date déjà passée.
+  const onResetMailbox = async (mailboxKey) => {
+    if (!user) return;
+    await resetMailboxLastCheckedAt(user.uid, mailboxKey);
+    setSyncState((s) => ({ ...s, lastCheckedAt: { ...s.lastCheckedAt, [mailboxKey]: null } }));
+  };
+
   const anyConnected = mailboxes.some((mb) => isMailboxConnected(mb.key));
 
   function MailboxRow({ mb }) {
@@ -210,6 +224,14 @@ export default function MailTasks() {
                 : "Connectée — jamais vérifiée"
               : "Non connectée"}
           </p>
+          {connected && lastChecked && (
+            <button
+              onClick={() => onResetMailbox(mb.key)}
+              className="text-xs text-sky-400 hover:text-sky-300 mt-0.5"
+            >
+              Réinitialiser (relancer une recherche sur les 3 derniers mois)
+            </button>
+          )}
           {checkErrors[mb.key] && <p className="text-xs text-red-400 mt-0.5">{checkErrors[mb.key]}</p>}
         </div>
         {!connected && (

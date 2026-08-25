@@ -44,6 +44,19 @@ export function setMailboxLastCheckedAt(uid, mailboxKey, iso) {
   );
 }
 
+// Oublie la dernière vérification d'UNE boîte (26/08/2026, demande de
+// Sybille : des mails plus anciens auxquels elle n'avait pas répondu
+// n'apparaissaient jamais — cf. `Réinitialiser` dans MailTasks.jsx pour le
+// contexte complet). Remet `lastCheckedAt[mailboxKey]` à `null` (pas de
+// suppression du champ, une valeur explicitement vide suffit) : la
+// vérification suivante pour cette boîte retombe alors sur le repli
+// "jamais vérifié" de `searchTaskCandidates` (fenêtre de 3 mois, plafond de
+// 150 candidats — cf. mailboxAuth.js), puis réécrit `lastCheckedAt`
+// normalement, exactement comme n'importe quelle vérification.
+export function resetMailboxLastCheckedAt(uid, mailboxKey) {
+  return setMailboxLastCheckedAt(uid, mailboxKey, null);
+}
+
 // Génère une clé de boîte unique à partir de son libellé — utilisée quand
 // Sybille ajoute une nouvelle boîte depuis les réglages, pour ne jamais
 // entrer en collision avec une boîte existante (ni avec les jetons

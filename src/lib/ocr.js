@@ -67,6 +67,17 @@ function getPdfjsLib() {
 // scannée), le texte extrait sera vide ou quasi vide — c'est détecté par
 // l'appelant, qui affiche alors un message adapté plutôt que d'essayer une
 // extraction impossible.
+//
+// ⚠️ pdf.js renvoie les fragments de texte SANS structure de ligne — il faut
+// reconstituer les lignes nous-mêmes à partir de la position verticale de
+// chaque fragment (item.transform[5]), sinon toute la page se retrouve
+// collée en une seule ligne géante. C'était le bug initial de cette
+// fonction (corrigé le 25/08/2026, remonté par Sybille : détection des
+// montants ET du fournisseur totalement fausse) — extractReceiptFields()
+// cherche un libellé PUIS un nombre sur la MÊME ligne, donc sans lignes
+// correctement séparées elle retombe sur le premier nombre de toute la page
+// au lieu de celui juste après "Total TTC", et le "fournisseur" deviné
+// devenait le texte entier de la page mis bout à bout.
 export async function extractPdfText(file) {
   const pdfjsLib = await getPdfjsLib();
   const buf = await file.arrayBuffer();
@@ -75,7 +86,27 @@ export async function extractPdfText(file) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map((it) => it.str).join(" ") + "\n";
+
+    // Regroupe les fragments à peu près à la même hauteur (± 2px, tolère
+    // les petites variations de ligne de base/exposants) dans une même
+    // ligne, puis trie chaque ligne de gauche à droite et les lignes de
+    // haut en bas — reconstitue la mise en page réelle du PDF.
+    const rows = [];
+    for (const item of content.items) {
+      if (!item.str) continue;
+      const y = item.transform[5];
+      let row = rows.find((r) => Math.abs(r.y - y) < 2);
+      if (!row) {
+        row = { y, parts: [] };
+        rows.push(row);
+      }
+      row.parts.push({ x: item.transform[4], str: item.str });
+    }
+    rows.sort((a, b) => b.y - a.y);
+    for (const row of rows) {
+      row.parts.sort((a, b) => a.x - b.x);
+      text += row.parts.map((p) => p.str).join(" ") + "\n";
+    }
   }
   return text;
 }

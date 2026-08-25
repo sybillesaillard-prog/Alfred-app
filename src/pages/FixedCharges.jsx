@@ -283,6 +283,10 @@ export default function FixedCharges() {
                     Prêt entièrement remboursé
                   </p>
                 )}
+                <p className="text-xs text-slate-400 mt-1.5">
+                  Fin de remboursement
+                  <span className="block text-sm text-slate-200">{dateFRLong(status.endDate)}</span>
+                </p>
               </div>
             ))}
           </div>

@@ -230,6 +230,13 @@ export const LOANS = [
   },
 ];
 
+// Date de la toute dernière échéance du prêt (fin de remboursement) — le
+// tableau d'amortissement se termine toujours par la ligne où le capital
+// restant dû atteint 0.
+export function getLoanEndDate(loan) {
+  return loan.schedule[loan.schedule.length - 1].date;
+}
+
 export function getLoanStatus(loan, todayISO = new Date().toISOString().slice(0, 10)) {
   let remaining = loan.montantInitial;
   let next = null;
@@ -244,6 +251,7 @@ export function getLoanStatus(loan, todayISO = new Date().toISOString().slice(0,
   return {
     remaining,
     next: next ? { date: next.date, echeance: next.echeance } : null,
+    endDate: getLoanEndDate(loan),
     paidOff: next == null,
   };
 }

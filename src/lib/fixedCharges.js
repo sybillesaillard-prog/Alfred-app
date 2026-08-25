@@ -1,4 +1,5 @@
 import { normalizeLabel } from "./bankTx";
+import { ALLIANZ_POLICIES, findAllianzPolicy } from "./allianzPolicies";
 
 // Catalogue de départ, repris du tableau Excel "Suivi_charges_SYBIL.xlsx"
 // (onglet "Suivi mensuel") que Sybille avait construit à la main à partir de
@@ -68,11 +69,35 @@ export const SEED_CHARGES = [
     notes: "Apparu à partir d'avril 2026 suite à la scission du bail 0001",
     needsReview: true,
   },
-  {
+  // Les 7 lignes Allianz ci-dessous remplacent l'ancienne ligne unique
+  // "Allianz IARD" (23/08/2026, complétées le même jour avec 3 polices
+  // supplémentaires trouvées dans le dossier 2025 : 2e véhicule GB-038-QF,
+  // box pro Peyrolles, et Solution BTP RC Pro/Décennale) — ventilées via le
+  // calendrier officiel Allianz plutôt que par mot-clé bancaire, cf.
+  // src/lib/allianzPolicies.js pour le détail. Somme des 7 polices
+  // réconciliée avec le vrai débit bancaire "ALLIANZ" (~415€/mois) — voir
+  // commentaire de réconciliation dans allianzPolicies.js.
+  ...ALLIANZ_POLICIES.map((p) => ({
     category: "Assurances",
-    label: "Allianz IARD",
+    label: p.label,
     matchKeyword: "ALLIANZ",
-    notes: "Mensuel — montant à peu près stable",
+    notes: `Contrat n°${p.contractNumber} — montant ventilé depuis le calendrier officiel Allianz, pas depuis le libellé bancaire (les 4 polices partagent le même mandat SEPA, donc le même libellé de prélèvement groupé).`,
+  })),
+  {
+    category: "Charges fixes strictes",
+    label: "Frais bancaires — virements SEPA instantanés (SCT)",
+    matchKeyword: "FRAIS SCT INST",
+    notes:
+      "Trouvé sur les factures pro Banque Populaire (~0,18-0,19€ par virement instantané envoyé, plusieurs fois par mois). Mot-clé lu sur la facture BP elle-même, pas sur un relevé CSV réel — à vérifier après le prochain import.",
+    needsReview: true,
+  },
+  {
+    category: "Charges fixes strictes",
+    label: "Frais bancaires — virements internet",
+    matchKeyword: "FR/VIR INTERNET",
+    notes:
+      "Trouvé sur les factures pro Banque Populaire (~0,18-0,19€ par virement fait depuis l'espace en ligne, plusieurs fois par mois). ⚠️ Mot-clé incertain : à vérifier qu'il ne matche pas aussi de vrais virements sortants dans le relevé CSV.",
+    needsReview: true,
   },
   {
     category: "Cotisations sociales & retraite",
@@ -158,12 +183,29 @@ export function monthLabelFr(monthKey) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+// Vrai si cette charge correspond à une police Allianz ventilée par
+// calendrier officiel plutôt que par mot-clé bancaire (cf.
+// allianzPolicies.js) — utilisé par l'UI pour afficher un badge distinct
+// dans la colonne "Mot-clé" au lieu du mot-clé (non utilisé dans ce cas).
+export function isScheduledCharge(charge) {
+  return findAllianzPolicy(charge.label) != null;
+}
+
 // Pour une charge fixe donnée (avec son mot-clé de correspondance) et une
 // liste d'opérations bancaires dédupliquées, construit la carte
 // { "2026-01": montantDébité, ... } en sommant toutes les opérations
 // débitées du mois dont le libellé contient le mot-clé (comparaison
 // insensible à la casse et aux accents).
+//
+// Exception : si le libellé de la charge correspond exactement à une police
+// Allianz connue (cf. allianzPolicies.js), le montant vient directement du
+// calendrier officiel Allianz plutôt que d'une recherche par mot-clé — les
+// 4 polices Allianz partagent le même mandat SEPA donc le même libellé de
+// prélèvement bancaire groupé, un mot-clé ne peut donc pas les distinguer.
 export function matchChargeByMonth(charge, transactions) {
+  const policy = findAllianzPolicy(charge.label);
+  if (policy) return { ...policy.scheduleByMonth };
+
   const byMonth = {};
   const keyword = normalizeLabel(charge.matchKeyword);
   if (!keyword) return byMonth;

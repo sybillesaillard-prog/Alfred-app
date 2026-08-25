@@ -4,9 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-// Hébergé sur GitHub Pages sous /alfred-app/ (dépôt sybillesaillard-prog/alfred-app),
+// Hébergé sur GitHub Pages sous /Alfred-app/ (dépôt sybillesaillard-prog/Alfred-app),
 // migration du 21/08/2026 depuis Netlify — cf. claude/app-alfred-notes.md.
-const BASE_PATH = '/alfred-app/';
+// Important : la casse doit correspondre EXACTEMENT au nom du dépôt GitHub
+// ("Alfred-app", avec un A majuscule) — GitHub Pages sert les fichiers avec
+// un chemin sensible à la casse, donc un base path en minuscules cassait le
+// chargement de tous les assets (JS/CSS renvoyés en 503) malgré un build réussi.
+const BASE_PATH = '/Alfred-app/';
 
 export default defineConfig({
   base: BASE_PATH,
@@ -46,11 +50,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        // Les fichiers du moteur OCR (worker/core wasm ~4 Mo) ne doivent pas
-        // être forcés dans le pré-cache obligatoire de l'app — ils ne sont
-        // utiles que lors d'une capture de ticket, pas à chaque ouverture.
-        // Ils seront simplement chargés à la demande par le navigateur.
-        globIgnores: ['**/tesseract/**'],
+        // Les fichiers du moteur OCR (worker/core wasm ~4 Mo) et la
+        // bibliothèque d'export XLS (exceljs, ~900 Ko, chargée à la demande
+        // via import() uniquement au clic sur "Exporter en XLS") ne doivent
+        // pas être forcés dans le pré-cache obligatoire de l'app — ils ne
+        // sont utiles qu'à l'usage de ces fonctionnalités précises, pas à
+        // chaque ouverture. Ils seront simplement chargés à la demande.
+        globIgnores: ['**/tesseract/**', '**/exceljs*'],
         // Le service worker intercepte toutes les requêtes de navigation et
         // les fait retomber sur l'app React (index.html) — ce qui écrasait
         // silencieusement les pages de prototype statiques comme

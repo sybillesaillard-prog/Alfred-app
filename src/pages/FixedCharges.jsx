@@ -1,8 +1,29 @@
 import { Fragment, useMemo, useState } from "react";
-import { CalendarClock, Plus, Trash2, Pencil, Check, X, AlertTriangle, Archive, ArchiveRestore } from "lucide-react";
+import {
+  CalendarClock,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+  AlertTriangle,
+  Archive,
+  ArchiveRestore,
+  FileSpreadsheet,
+  CalendarCheck2,
+} from "lucide-react";
 import { useCollection } from "../lib/useCollection";
 import { dedupeTransactions } from "../lib/bankTx";
-import { SEED_CATEGORIES, SEED_CHARGES, monthKeyOf, monthLabelFr, matchChargeByMonth, average } from "../lib/fixedCharges";
+import {
+  SEED_CATEGORIES,
+  SEED_CHARGES,
+  monthKeyOf,
+  monthLabelFr,
+  matchChargeByMonth,
+  isScheduledCharge,
+  average,
+} from "../lib/fixedCharges";
+import { downloadTableAsXlsx } from "../lib/xlsxExport";
 
 const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 const eurCompact = (v) => (v ? eur.format(v) : "—");
@@ -159,17 +180,54 @@ export default function FixedCharges() {
     }
   };
 
+  const [exporting, setExporting] = useState(false);
+  const exportXlsx = async () => {
+    setExporting(true);
+    try {
+      const monthLabels = months.map(monthLabelFr);
+      const rows = [];
+      for (const { category, items } of groups) {
+        const catValues = months.map((m) => items.reduce((s, c) => s + (matrix[c.id]?.[m] || 0), 0));
+        rows.push({ label: category.toUpperCase(), values: catValues, average: average(catValues), bold: true });
+        for (const c of items) {
+          const rowValues = months.map((m) => matrix[c.id]?.[m] || 0);
+          rows.push({ label: `  ${c.label}`, values: rowValues, average: average(rowValues) });
+        }
+      }
+      const totalValues = months.map((m) => totalsByMonth[m]);
+      await downloadTableAsXlsx({
+        filename: `charges-fixes-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: "Charges fixes",
+        monthLabels,
+        rows,
+        totalRow: { label: "TOTAL CHARGES SUIVIES", values: totalValues, average: average(totalValues) },
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-2">
         <h1 className="text-xl font-semibold">Charges fixes</h1>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="flex items-center gap-1.5 bg-sky-400 text-slate-950 rounded-lg px-3 py-2 text-sm font-medium hover:bg-sky-300 transition"
-        >
-          <Plus size={16} />
-          Ajouter
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportXlsx}
+            disabled={exporting || months.length === 0}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 text-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-800 transition disabled:opacity-50"
+          >
+            <FileSpreadsheet size={16} />
+            {exporting ? "Export…" : "Exporter en XLS"}
+          </button>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="flex items-center gap-1.5 bg-sky-400 text-slate-950 rounded-lg px-3 py-2 text-sm font-medium hover:bg-sky-300 transition"
+          >
+            <Plus size={16} />
+            Ajouter
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-4">
@@ -287,7 +345,15 @@ export default function FixedCharges() {
                               {c.notes && <p className="text-xs text-slate-500">{c.notes}</p>}
                             </td>
                             <td className="pr-3 py-2 text-slate-400">
-                              {c.matchKeyword ? (
+                              {isScheduledCharge(c) ? (
+                                <span
+                                  className="flex items-center gap-1 text-xs text-emerald-300/90"
+                                  title="Montant ventilé depuis le calendrier officiel Allianz, pas depuis le libellé bancaire"
+                                >
+                                  <CalendarCheck2 size={12} />
+                                  Calendrier Allianz
+                                </span>
+                              ) : c.matchKeyword ? (
                                 <code className="text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5">
                                   {c.matchKeyword}
                                 </code>

@@ -166,6 +166,79 @@ export function generateMissingTransactionsPdf({ monthLabel, missingTransactions
   return pdf.output("blob");
 }
 
+// Récap PDF d'un tableau catégorie/mois (Charges variables, Charges fixes)
+// — format paysage pour laisser de la place à plusieurs colonnes de mois.
+// rows: [{ label, values: [montant, ...], average, bold? }]
+export function generateMonthlyMatrixPdf({ title, monthLabels, rows, totalRow }) {
+  const pdf = new jsPDF({ orientation: "l", unit: "pt", format: "a4" });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const marginX = 32;
+  const bottomLimit = pageH - 36;
+  let y = 44;
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(15);
+  pdf.text(title, marginX, y);
+  y += 15;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(120, 120, 120);
+  pdf.text(`Généré depuis Alfred le ${new Date().toLocaleDateString("fr-FR")}`, marginX, y);
+  pdf.setTextColor(20, 20, 20);
+  y += 22;
+
+  const labelColW = 190;
+  const cols = [...monthLabels, "Moyenne"];
+  const colW = (pageW - marginX * 2 - labelColW) / cols.length;
+
+  const drawHeader = () => {
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    cols.forEach((c, i) => {
+      pdf.text(c, marginX + labelColW + colW * (i + 1) - 4, y, { align: "right" });
+    });
+    y += 5;
+    pdf.setDrawColor(210, 210, 210);
+    pdf.line(marginX, y, pageW - marginX, y);
+    y += 11;
+    pdf.setTextColor(20, 20, 20);
+  };
+
+  drawHeader();
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8.5);
+
+  const drawRow = (row) => {
+    if (y + 13 > bottomLimit) {
+      pdf.addPage();
+      y = 44;
+      drawHeader();
+      pdf.setFont(row.bold ? "helvetica" : "helvetica", row.bold ? "bold" : "normal");
+      pdf.setFontSize(8.5);
+    }
+    pdf.setFont("helvetica", row.bold ? "bold" : "normal");
+    pdf.text(truncate(row.label, 46), marginX, y);
+    [...row.values, row.average].forEach((v, i) => {
+      pdf.text(v ? euro.format(v) : "—", marginX + labelColW + colW * (i + 1) - 4, y, { align: "right" });
+    });
+    y += 13;
+  };
+
+  for (const row of rows) drawRow(row);
+
+  if (totalRow) {
+    y += 3;
+    pdf.setDrawColor(180, 180, 180);
+    pdf.line(marginX, y, pageW - marginX, y);
+    y += 12;
+    drawRow({ ...totalRow, bold: true });
+  }
+
+  return pdf.output("blob");
+}
+
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

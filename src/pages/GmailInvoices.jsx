@@ -46,16 +46,13 @@ const dateFR = (dateHeader) => {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 };
 
-// TEMPORAIRE, le temps des tests avec Sybille (25/08) : désactive la
-// mémorisation de la dernière vérification — sans ça, une fois une
-// vérification faite, les vérifications suivantes ne recherchent que les
-// emails reçus APRÈS cette date-là, donc plus rien ne remonte tant qu'aucun
-// nouvel email n'arrive (ce qui a bloqué les tests). Avec ce drapeau à
-// `true`, chaque clic sur "Vérifier" recherche systématiquement les 90
-// derniers jours, sans lire ni écrire `lastCheckedAt`. À repasser à `false`
-// une fois les tests terminés, pour revenir au comportement normal (ne
-// chercher que les nouveaux emails depuis la dernière vérification).
-const TESTING_IGNORE_SYNC_MEMORY = true;
+// Ancien drapeau de test (25/08), désactivé le 25/08 à la demande de
+// Sybille une fois les tests d'import Gmail validés — la mémorisation de la
+// dernière vérification est de nouveau active (comportement normal : ne
+// remonter que les emails reçus depuis la dernière vérification). Laissé en
+// place plutôt que supprimé pour pouvoir le réactiver facilement si un futur
+// test en a de nouveau besoin.
+const TESTING_IGNORE_SYNC_MEMORY = false;
 
 export default function GmailInvoices() {
   const { user } = useAuth();

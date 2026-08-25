@@ -46,6 +46,17 @@ const dateFR = (dateHeader) => {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 };
 
+// TEMPORAIRE, le temps des tests avec Sybille (25/08) : désactive la
+// mémorisation de la dernière vérification — sans ça, une fois une
+// vérification faite, les vérifications suivantes ne recherchent que les
+// emails reçus APRÈS cette date-là, donc plus rien ne remonte tant qu'aucun
+// nouvel email n'arrive (ce qui a bloqué les tests). Avec ce drapeau à
+// `true`, chaque clic sur "Vérifier" recherche systématiquement les 90
+// derniers jours, sans lire ni écrire `lastCheckedAt`. À repasser à `false`
+// une fois les tests terminés, pour revenir au comportement normal (ne
+// chercher que les nouveaux emails depuis la dernière vérification).
+const TESTING_IGNORE_SYNC_MEMORY = true;
+
 export default function GmailInvoices() {
   const { user } = useAuth();
   const { items: expenses, add: addExpense } = useCollection("expenses", "date");
@@ -104,11 +115,15 @@ export default function GmailInvoices() {
     setChecking(true);
     setCheckError("");
     try {
-      const candidates = await searchInvoiceCandidates(syncState.lastCheckedAt);
+      const candidates = await searchInvoiceCandidates(
+        TESTING_IGNORE_SYNC_MEMORY ? null : syncState.lastCheckedAt
+      );
       setRows(toRows(candidates, syncState.knownSenders, syncState.keywords));
-      const now = new Date().toISOString();
-      await setLastCheckedAt(user.uid, now);
-      setSyncState((s) => ({ ...s, lastCheckedAt: now }));
+      if (!TESTING_IGNORE_SYNC_MEMORY) {
+        const now = new Date().toISOString();
+        await setLastCheckedAt(user.uid, now);
+        setSyncState((s) => ({ ...s, lastCheckedAt: now }));
+      }
     } catch (err) {
       setCheckError(err.message || "La vérification a échoué.");
       if (err.message?.includes("reconnecte")) setConnected(false);
@@ -234,7 +249,9 @@ export default function GmailInvoices() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-slate-300">
-                {syncState?.lastCheckedAt
+                {TESTING_IGNORE_SYNC_MEMORY
+                  ? "Mode test : chaque vérification recherche les 90 derniers jours (mémorisation désactivée)."
+                  : syncState?.lastCheckedAt
                   ? `Dernière vérification : ${new Date(syncState.lastCheckedAt).toLocaleString("fr-FR")}`
                   : "Jamais vérifié — la première recherche remonte 90 jours en arrière."}
               </p>

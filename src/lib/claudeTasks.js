@@ -1,0 +1,164 @@
+// Analyse par IA (API Claude d'Anthropic) des mails récupérés par
+// mailboxAuth.js pour repérer ceux qui attendent une action de la part de
+// Sybille — cadré avec elle le 25/08/2026 (cf. claude/app-alfred-notes.md) :
+// détection par lecture IA plutôt que par règles/mots-clés, pour juger
+// correctement le SENS d'un mail (pas juste des motifs de surface).
+//
+// ⚠️ La clé API est saisie une fois dans les réglages de la page (jamais
+// dans le code), et stockée dans `localStorage` du navigateur — donc propre
+// à cet appareil (à ressaisir sur un autre appareil), jamais envoyée à
+// personne d'autre qu'à l'API Anthropic elle-même. Comme pour les jetons
+// Google déjà stockés côté navigateur ailleurs dans l'app, toute personne
+// ayant accès physique à ce PC/navigateur pourrait la lire — seul risque
+// réel : quelqu'un pourrait consommer du crédit API en son nom, pas accéder
+// à ses mails (l'appel Claude ne reçoit QUE le texte des mails déjà
+// récupéré, jamais un accès direct à Gmail).
+//
+// Appel direct depuis le navigateur (pas de serveur intermédiaire) grâce à
+// l'en-tête "anthropic-dangerous-direct-browser-access" qu'Anthropic a
+// ajouté spécifiquement pour permettre ça (cf. recherche du 25/08/2026) —
+// cohérent avec le reste de l'appli, déjà 100% client-side (Firebase,
+// Google APIs).
+const API_KEY_STORAGE = "alfred_claude_api_key";
+const MODEL_STORAGE = "alfred_claude_model";
+
+// Haiku 4.5 par défaut : largement suffisant pour ce tri (pas besoin de
+// raisonnement poussé) et environ 2x moins cher que Sonnet à l'usage — coût
+// estimé le 25/08/2026 avec Sybille : de l'ordre de 1 centime/jour pour une
+// vingtaine de mails/jour/boîte sur 2 boîtes, donc largement sous 1€/mois
+// même avec un usage plus intense.
+export const CLAUDE_MODELS = {
+  haiku: { id: "claude-haiku-4-5-20251001", label: "Haiku (rapide, recommandé)" },
+  sonnet: { id: "claude-sonnet-5", label: "Sonnet (plus précis, plus cher)" },
+};
+
+export function getClaudeApiKey() {
+  try {
+    return localStorage.getItem(API_KEY_STORAGE) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setClaudeApiKey(key) {
+  try {
+    if (key) localStorage.setItem(API_KEY_STORAGE, key);
+    else localStorage.removeItem(API_KEY_STORAGE);
+  } catch {
+    // localStorage indisponible — tant pis, à ressaisir à chaque session.
+  }
+}
+
+export function getClaudeModelKey() {
+  try {
+    const stored = localStorage.getItem(MODEL_STORAGE);
+    return stored && CLAUDE_MODELS[stored] ? stored : "haiku";
+  } catch {
+    return "haiku";
+  }
+}
+
+export function setClaudeModelKey(key) {
+  try {
+    localStorage.setItem(MODEL_STORAGE, CLAUDE_MODELS[key] ? key : "haiku");
+  } catch {
+    // ignore
+  }
+}
+
+// Tronque l'aperçu envoyé à l'IA — un `snippet` Gmail fait déjà ~100-200
+// caractères, cette limite est surtout une garde-fou si jamais un champ
+// anormalement long passait au travers.
+const SNIPPET_MAX_CHARS = 300;
+
+function buildPrompt(mailboxLabel, category, messages) {
+  const items = messages.map((m) => ({
+    id: m.id,
+    de: m.from,
+    objet: m.subject,
+    apercu: (m.snippet || "").slice(0, SNIPPET_MAX_CHARS),
+  }));
+  const contexte =
+    category === "pro"
+      ? "une boîte mail PROFESSIONNELLE (elle est cheffe d'entreprise dans le BTP)"
+      : "une boîte mail PERSONNELLE";
+  return `Voici une liste de mails reçus par Sybille sur ${mailboxLabel}, ${contexte}. Pour CHAQUE mail de la liste (identifié par son "id"), indique s'il nécessite une VRAIE action concrète de sa part : répondre à quelqu'un qui attend une réponse, payer quelque chose, remplir/signer un document, prendre rendez-vous, rappeler quelqu'un, etc.
+
+Ne compte PAS comme une action à faire : les newsletters, les mails purement informatifs, les accusés de réception automatiques, les confirmations (commande, livraison, paiement déjà effectué), les notifications de réseaux sociaux, la publicité, les mails où elle est juste en copie sans qu'on lui demande quelque chose directement.
+
+Si tu n'es pas sûr qu'une action soit vraiment nécessaire, penche plutôt vers "pas d'action" — mieux vaut rater un cas ambigu que noyer Sybille sous de fausses tâches.
+
+Pour chaque mail qui nécessite une action, décris la tâche en une courte phrase en français, à l'impératif ou à l'infinitif (ex. "Répondre à l'assureur au sujet du sinistre", "Payer le loyer de septembre", "Rappeler M. Martin pour le devis"), assez précise pour être comprise sans redonner l'objet du mail.
+
+Mails à analyser :
+${JSON.stringify(items, null, 2)}`;
+}
+
+const RESULTS_TOOL = {
+  name: "flag_actionable_emails",
+  description:
+    "Retourne, pour chaque mail fourni, s'il nécessite une action concrète de la part de Sybille et, si oui, une courte description de cette tâche.",
+  input_schema: {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "L'id du mail, recopié tel quel depuis la liste fournie." },
+            needsAction: { type: "boolean" },
+            task: {
+              type: "string",
+              description: "Description courte de la tâche à faire, en français — vide/absent si needsAction est false.",
+            },
+          },
+          required: ["id", "needsAction"],
+        },
+      },
+    },
+    required: ["results"],
+  },
+};
+
+// Envoie un LOT de mails en UN SEUL appel API (pas un appel par mail) —
+// c'est ce qui garde le coût négligeable (cf. commentaire de coût
+// plus haut). Renvoie uniquement les mails jugés actionnables, avec leur
+// tâche associée : { id, task }[].
+export async function analyzeMailsForTasks(mailboxLabel, category, messages) {
+  if (messages.length === 0) return [];
+  const apiKey = getClaudeApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "Clé API Claude manquante — renseigne-la dans les réglages de cette page (icône ⚙️)."
+    );
+  }
+  const modelId = CLAUDE_MODELS[getClaudeModelKey()].id;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: modelId,
+      max_tokens: 4096,
+      tools: [RESULTS_TOOL],
+      tool_choice: { type: "tool", name: "flag_actionable_emails" },
+      messages: [{ role: "user", content: buildPrompt(mailboxLabel, category, messages) }],
+    }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Clé API Claude invalide ou expirée.");
+    if (res.status === 429) throw new Error("Limite de l'API Claude atteinte — réessaie dans un instant.");
+    throw new Error(`L'analyse par l'IA a échoué (erreur ${res.status}).`);
+  }
+  const data = await res.json();
+  const toolUse = (data.content || []).find((b) => b.type === "tool_use" && b.name === "flag_actionable_emails");
+  const results = toolUse?.input?.results || [];
+  return results.filter((r) => r.needsAction && r.task).map((r) => ({ id: r.id, task: r.task }));
+}

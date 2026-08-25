@@ -9,6 +9,7 @@ import Tasks from "./pages/Tasks";
 import FixedCharges from "./pages/FixedCharges";
 import VariableCharges from "./pages/VariableCharges";
 import GmailInvoices from "./pages/GmailInvoices";
+import MailTasks from "./pages/MailTasks";
 
 function LoadingScreen() {
   return (
@@ -33,6 +34,7 @@ function AuthGate() {
         <Route path="/charges-variables" element={<VariableCharges />} />
         <Route path="/taches" element={<Tasks />} />
         <Route path="/boite-mail" element={<GmailInvoices />} />
+        <Route path="/taches-mail" element={<MailTasks />} />
       </Route>
       <Route path="*" element={<Navigate to="/depenses" replace />} />
     </Routes>

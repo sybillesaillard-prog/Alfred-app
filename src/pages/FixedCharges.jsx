@@ -22,7 +22,7 @@ import {
   monthKeyOf,
   monthLabelFr,
   matchChargeByMonth,
-  isScheduledCharge,
+  scheduledChargeSource,
   average,
 } from "../lib/fixedCharges";
 import { LOANS, getLoanStatus } from "../lib/loans";
@@ -369,6 +369,7 @@ export default function FixedCharges() {
                       {items.map((c) => {
                         const rowValues = months.map((m) => matrix[c.id]?.[m] || 0);
                         const isEditing = editingId === c.id;
+                        const scheduleSource = scheduledChargeSource(c);
                         if (isEditing) {
                           return (
                             <tr key={c.id}>
@@ -396,13 +397,21 @@ export default function FixedCharges() {
                               {c.notes && <p className="text-xs text-slate-500">{c.notes}</p>}
                             </td>
                             <td className="pr-3 py-2 text-slate-400">
-                              {isScheduledCharge(c) ? (
+                              {scheduleSource === "allianz" ? (
                                 <span
                                   className="flex items-center gap-1 text-xs text-emerald-300/90"
                                   title="Montant ventilé depuis le calendrier officiel Allianz, pas depuis le libellé bancaire"
                                 >
                                   <CalendarCheck2 size={12} />
                                   Calendrier Allianz
+                                </span>
+                              ) : scheduleSource === "loan" ? (
+                                <span
+                                  className="flex items-center gap-1 text-xs text-emerald-300/90"
+                                  title="Montant ventilé depuis le tableau d'amortissement officiel du prêt, pas depuis le libellé bancaire"
+                                >
+                                  <CalendarCheck2 size={12} />
+                                  Tableau d'amortissement
                                 </span>
                               ) : c.matchKeyword ? (
                                 <code className="text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5">

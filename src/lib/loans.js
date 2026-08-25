@@ -255,3 +255,39 @@ export function getLoanStatus(loan, todayISO = new Date().toISOString().slice(0,
     paidOff: next == null,
   };
 }
+
+// Construit la carte { "YYYY-MM": montant de l'échéance } à partir du
+// tableau d'amortissement officiel du prêt — même principe que
+// allianzPolicies.js/scheduleByMonth (25/08, demande de Sybille : "pointer
+// les écritures 'échéances prêt' avec le tableau d'amortissement"). Permet à
+// src/lib/fixedCharges.js d'afficher le VRAI montant officiel de chaque
+// mois dans le tableau Charges fixes, plutôt que de dépendre uniquement du
+// rapprochement par mot-clé bancaire (qui peut rater un mois si la banque
+// change légèrement son libellé, ou sommer par erreur un autre prélèvement
+// contenant le même mot-clé). Les lignes à 0€ (période de carence du PGE,
+// avant le premier vrai prélèvement) sont ignorées.
+export function getLoanScheduleByMonth(loan) {
+  const byMonth = {};
+  for (const row of loan.schedule) {
+    if (!row.echeance) continue;
+    byMonth[row.date.slice(0, 7)] = row.echeance;
+  }
+  return byMonth;
+}
+
+// Retrouve le prêt correspondant à une charge fixe (src/lib/fixedCharges.js)
+// à partir de son numéro de contrat — cherché à la fois dans le mot-clé
+// bancaire (`matchKeyword`, ex. "8774864") ET dans le libellé de la charge,
+// avec ou sans le zéro initial (`08774864` sur les avis officiels de la
+// banque vs `8774864` tel que Sybille l'a saisi comme mot-clé) — pour ne pas
+// dépendre d'un libellé de charge rédigé mot pour mot comme dans LOANS.
+export function findLoanForCharge(charge) {
+  const haystack = `${charge?.matchKeyword || ""} ${charge?.label || ""}`;
+  return (
+    LOANS.find((loan) => {
+      const ref = loan.contractNumber;
+      const refNoLeadingZero = ref.replace(/^0+/, "");
+      return haystack.includes(ref) || (refNoLeadingZero && haystack.includes(refNoLeadingZero));
+    }) || null
+  );
+}

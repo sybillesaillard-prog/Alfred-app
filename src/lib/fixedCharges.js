@@ -1,5 +1,6 @@
 import { normalizeLabel } from "./bankTx";
 import { ALLIANZ_POLICIES, findAllianzPolicy } from "./allianzPolicies";
+import { findLoanForCharge, getLoanScheduleByMonth } from "./loans";
 
 // Catalogue de départ, repris du tableau Excel "Suivi_charges_SYBIL.xlsx"
 // (onglet "Suivi mensuel") que Sybille avait construit à la main à partir de
@@ -18,18 +19,32 @@ export const SEED_CATEGORIES = [
   "Salaires nets versés",
 ];
 
+// Les 3 lignes "Échéance prêt" ci-dessous sont désormais ventilées depuis le
+// VRAI tableau d'amortissement officiel de chaque prêt (src/lib/loans.js,
+// via matchChargeByMonth/findLoanForCharge) plutôt que par simple somme de
+// mot-clé bancaire — le mot-clé (numéro de contrat) sert seulement à
+// retrouver le bon prêt, plus à sommer des transactions (25/08, demande de
+// Sybille : "pointer les écritures 'échéances prêt' avec le tableau
+// d'amortissement").
 export const SEED_CHARGES = [
   {
     category: "Charges fixes strictes",
-    label: "Échéance prêt n°1 (réf. 8774864)",
+    label: "Échéance prêt n°1 — PGE (réf. 8774864)",
     matchKeyword: "8774864",
-    notes: "Mensuel — capital + assurance + intérêts dégressifs",
+    notes: "Mensuel — ventilé depuis le tableau d'amortissement officiel (src/lib/loans.js)",
   },
   {
     category: "Charges fixes strictes",
-    label: "Échéance prêt n°2 (réf. 8827757)",
+    label: "Échéance prêt n°2 — Crédit 20 000 € (réf. 8827757)",
     matchKeyword: "8827757",
-    notes: "Mensuel — capital + assurance + intérêts dégressifs",
+    notes: "Mensuel — ventilé depuis le tableau d'amortissement officiel (src/lib/loans.js)",
+  },
+  {
+    category: "Charges fixes strictes",
+    label: "Échéance prêt n°3 — Crédit 40 000 € (réf. 8867869)",
+    matchKeyword: "8867869",
+    notes:
+      "Mensuel à partir d'oct. 2026 — ventilé depuis le tableau d'amortissement officiel (src/lib/loans.js). Absent de l'ancien catalogue SEED_CHARGES, ajouté le 25/08 — à ajouter manuellement via le formulaire \"Ajouter\" si elle n'existe pas déjà comme charge fixe.",
   },
   {
     category: "Charges fixes strictes",
@@ -183,12 +198,24 @@ export function monthLabelFr(monthKey) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-// Vrai si cette charge correspond à une police Allianz ventilée par
-// calendrier officiel plutôt que par mot-clé bancaire (cf.
-// allianzPolicies.js) — utilisé par l'UI pour afficher un badge distinct
-// dans la colonne "Mot-clé" au lieu du mot-clé (non utilisé dans ce cas).
+// "allianz" si cette charge correspond à une police Allianz ventilée par
+// calendrier officiel (cf. allianzPolicies.js), "loan" si elle correspond à
+// un prêt bancaire ventilé par son tableau d'amortissement officiel (cf.
+// loans.js, ajouté le 25/08 à la demande de Sybille : "pointer les
+// écritures 'échéances prêt' avec le tableau d'amortissement"), sinon
+// `null` — utilisé par l'UI pour afficher un badge distinct (avec le bon
+// libellé) dans la colonne "Mot-clé" au lieu du mot-clé bancaire.
+export function scheduledChargeSource(charge) {
+  if (findAllianzPolicy(charge.label)) return "allianz";
+  if (findLoanForCharge(charge)) return "loan";
+  return null;
+}
+
+// Vrai si cette charge est ventilée par un calendrier officiel (Allianz ou
+// prêt) plutôt que par mot-clé bancaire — conservé pour compatibilité,
+// préférer scheduledChargeSource() quand il faut distinguer les deux.
 export function isScheduledCharge(charge) {
-  return findAllianzPolicy(charge.label) != null;
+  return scheduledChargeSource(charge) != null;
 }
 
 // Pour une charge fixe donnée (avec son mot-clé de correspondance) et une
@@ -197,14 +224,27 @@ export function isScheduledCharge(charge) {
 // débitées du mois dont le libellé contient le mot-clé (comparaison
 // insensible à la casse et aux accents).
 //
-// Exception : si le libellé de la charge correspond exactement à une police
-// Allianz connue (cf. allianzPolicies.js), le montant vient directement du
-// calendrier officiel Allianz plutôt que d'une recherche par mot-clé — les
-// 4 polices Allianz partagent le même mandat SEPA donc le même libellé de
-// prélèvement bancaire groupé, un mot-clé ne peut donc pas les distinguer.
+// Exception 1 : si le libellé de la charge correspond exactement à une
+// police Allianz connue (cf. allianzPolicies.js), le montant vient
+// directement du calendrier officiel Allianz plutôt que d'une recherche par
+// mot-clé — les 4 polices Allianz partagent le même mandat SEPA donc le
+// même libellé de prélèvement bancaire groupé, un mot-clé ne peut donc pas
+// les distinguer.
+//
+// Exception 2 (25/08, demande de Sybille) : si la charge correspond à un
+// prêt bancaire connu (numéro de contrat retrouvé dans le mot-clé ou le
+// libellé — cf. findLoanForCharge dans loans.js), le montant de chaque mois
+// vient du VRAI tableau d'amortissement officiel plutôt que d'une somme de
+// transactions bancaires — plus fiable qu'un rapprochement par mot-clé
+// (montant exact y compris pour les mois pas encore couverts par un relevé
+// bancaire importé, et pas de risque de somme faussée si le libellé
+// bancaire change légèrement d'un mois à l'autre).
 export function matchChargeByMonth(charge, transactions) {
   const policy = findAllianzPolicy(charge.label);
   if (policy) return { ...policy.scheduleByMonth };
+
+  const loan = findLoanForCharge(charge);
+  if (loan) return getLoanScheduleByMonth(loan);
 
   const byMonth = {};
   const keyword = normalizeLabel(charge.matchKeyword);

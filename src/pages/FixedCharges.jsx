@@ -11,6 +11,8 @@ import {
   ArchiveRestore,
   FileSpreadsheet,
   CalendarCheck2,
+  Landmark,
+  CheckCircle2,
 } from "lucide-react";
 import { useCollection } from "../lib/useCollection";
 import { dedupeTransactions } from "../lib/bankTx";
@@ -23,10 +25,13 @@ import {
   isScheduledCharge,
   average,
 } from "../lib/fixedCharges";
+import { LOANS, getLoanStatus } from "../lib/loans";
 import { downloadTableAsXlsx } from "../lib/xlsxExport";
 
 const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 const eurCompact = (v) => (v ? eur.format(v) : "—");
+const dateFRLong = (iso) =>
+  new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
 
 function ChargeEditForm({ initial, categories, onSave, onCancel }) {
   const [form, setForm] = useState({
@@ -102,6 +107,12 @@ export default function FixedCharges() {
   const [seeding, setSeeding] = useState(false);
 
   const transactions = useMemo(() => dedupeTransactions(statements), [statements]);
+
+  // Prêts bancaires en cours (calendrier d'amortissement officiel, cf.
+  // src/lib/loans.js) — capital restant dû et prochaine échéance calculés à
+  // partir de la date du jour, indépendamment des relevés bancaires
+  // importés (pas de rapprochement ici, ce sont des chiffres officiels).
+  const loanStatuses = LOANS.map((loan) => ({ loan, status: getLoanStatus(loan) }));
 
   const months = useMemo(() => {
     const set = new Set(transactions.map((t) => monthKeyOf(t.date)).filter(Boolean));
@@ -241,6 +252,42 @@ export default function FixedCharges() {
           </span>
         </p>
       </div>
+
+      {loanStatuses.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+            <Landmark size={16} className="text-slate-500" />
+            Prêts bancaires en cours
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {loanStatuses.map(({ loan, status }) => (
+              <div key={loan.key} className="bg-slate-800/60 border border-slate-700 rounded-lg p-3">
+                <p className="text-sm text-slate-100 font-medium">{loan.label}</p>
+                <p className="text-xs text-slate-500 mb-2">
+                  N° {loan.contractNumber} — {loan.bank}
+                </p>
+                <p className="text-xs text-slate-400">
+                  Capital restant dû
+                  <span className="block text-lg font-semibold text-sky-300">{eurCompact(status.remaining)}</span>
+                </p>
+                {status.next ? (
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    Prochaine échéance
+                    <span className="block text-sm text-slate-200">
+                      {dateFRLong(status.next.date)} — {eurCompact(status.next.echeance)}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-1 text-xs text-emerald-400 mt-1.5">
+                    <CheckCircle2 size={12} />
+                    Prêt entièrement remboursé
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading || statementsLoading ? (
         <p className="text-slate-500 text-sm text-center py-8">Chargement…</p>

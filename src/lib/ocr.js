@@ -105,16 +105,30 @@ function findAmount(lines, patterns) {
 export function extractReceiptFields(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  let ttc = findAmount(lines, [/total\s*ttc/i, /net\s*a\s*payer/i, /net\s*à\s*payer/i]);
-  let ht = findAmount(lines, [/total\s*ht\b/i, /montant\s*ht\b/i]);
+  // Priorité stricte aux libellés exacts "Total TTC" / "Total HT" /
+  // "Total TVA" — les plus fiables et les plus courants sur une facture,
+  // que ce soit lue par OCR (photo) ou extraite directement du texte d'un
+  // PDF — avec un repli sur des libellés voisins seulement si le libellé
+  // exact est absent du document (précision demandée par Sybille le 25/08 :
+  // sur un PDF en particulier, la recherche trop large de "tva" tombait
+  // parfois sur une autre mention du mot présente ailleurs sur le document
+  // — ex. un numéro de TVA intracommunautaire — au lieu du vrai montant de
+  // taxe). Chaque champ est cherché en deux passes séparées (jamais mélangé
+  // avec les motifs de repli dans la même passe), pour que "Total TTC" soit
+  // toujours retenu avant "Net à payer" même si ce dernier apparaît plus
+  // tôt dans le texte.
+  let ttc =
+    findAmount(lines, [/total\s*ttc/i]) ??
+    findAmount(lines, [/net\s*a\s*payer/i, /net\s*à\s*payer/i]);
+  let ht = findAmount(lines, [/total\s*ht\b/i]) ?? findAmount(lines, [/montant\s*ht\b/i]);
+  let tva =
+    findAmount(lines, [/total\s*tva/i]) ?? findAmount(lines, [/montant\s*tva/i, /dont\s*tva/i]);
 
-  const tvaLine = lines.find((l) => /\btva\b/i.test(l));
-  let tva = null;
   let rate = null;
-  if (tvaLine) {
-    const m = tvaLine.match(numRe);
-    if (m) tva = parseFrenchNumber(m[1]);
-    const pct = tvaLine.match(/(\d{1,2}[.,]?\d?)\s*%/);
+  const tvaLineForRate =
+    lines.find((l) => /total\s*tva/i.test(l)) || lines.find((l) => /\btva\b/i.test(l));
+  if (tvaLineForRate) {
+    const pct = tvaLineForRate.match(/(\d{1,2}[.,]?\d?)\s*%/);
     if (pct) rate = round2(parseFrenchNumber(pct[1]));
   }
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Camera, FileText, Download, Cloud, CloudCheck } from "lucide-react";
+import { X, Camera, FileText, Download, Cloud, CloudCheck, ScanLine } from "lucide-react";
 import { EXPENSE_CATEGORIES } from "../lib/expenseCategories";
 import {
   VAT_RATES,
@@ -12,6 +12,14 @@ import {
 import { fileToPdfBlob, downloadBlob } from "../lib/pdf";
 import { recognizeReceiptText, extractReceiptFields } from "../lib/ocr";
 import { isDriveConnected, connectDrive, uploadReceiptToDrive } from "../lib/googleDrive";
+import {
+  isLikelyDesktop,
+  isRelayRunning,
+  discoverScanners,
+  getSavedScanner,
+  saveScanner,
+  scanDocument,
+} from "../lib/scanRelay";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -73,6 +81,15 @@ export default function ExpenseForm({ initial, existingFilenames = [], onSubmit,
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveError, setDriveError] = useState("");
 
+  // État du bouton "Scanner" (relais local vers l'imprimante réseau eSCL) —
+  // cf. src/lib/scanRelay.js. "idle" = pas encore essayé, "checking" = on
+  // vérifie que le relais tourne, "need-ip" = relais trouvé mais aucune
+  // imprimante détectée automatiquement (saisie manuelle de l'IP), "scanning"
+  // = numérisation en cours, "error"/"no-relay" = messages à afficher.
+  const [scanPhase, setScanPhase] = useState("idle");
+  const [scanError, setScanError] = useState("");
+  const [manualIp, setManualIp] = useState("");
+
   const effectiveRate = () => {
     if (rateSel === "custom") return (parseFloat(customRate) || 0) / 100;
     return parseFloat(rateSel) || 0;
@@ -117,8 +134,11 @@ export default function ExpenseForm({ initial, existingFilenames = [], onSubmit,
     setTtc(tt ? String(tt) : "");
   };
 
-  const onFileChange = (e) => {
-    const f = e.target.files[0];
+  // Point d'entrée commun une fois qu'on a un fichier — qu'il vienne du
+  // sélecteur "Photographier"/"Importer" (téléphone/PC) ou du scanner réseau
+  // (PC uniquement, cf. handleScanClick ci-dessous) : même prévisualisation,
+  // même lecture automatique OCR.
+  const processAcquiredFile = (f) => {
     if (!f) return;
     setFile(f);
     setOcrFound(false);
@@ -162,6 +182,66 @@ export default function ExpenseForm({ initial, existingFilenames = [], onSubmit,
       .catch(() => {
         setOcrStatus("Lecture automatique impossible pour cette photo — remplis les champs ci-dessous.");
       });
+  };
+
+  const onFileChange = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    processAcquiredFile(f);
+  };
+
+  // Lance un scan via le relais local (src/lib/scanRelay.js). Enchaîne :
+  // relais lancé ? imprimante déjà connue (mémorisée) ou découverte
+  // automatique (mDNS) ? sinon demande l'IP à la main. Chaque étape peut
+  // échouer sans casser le formulaire — l'utilisatrice garde toujours la
+  // solution de repli "Importer PDF/image" (scan via l'appli Windows, puis
+  // import du fichier).
+  const runScan = async (target) => {
+    setScanPhase("scanning");
+    setScanError("");
+    try {
+      const f = await scanDocument(target);
+      saveScanner(target);
+      setScanPhase("idle");
+      processAcquiredFile(f);
+    } catch (err) {
+      setScanPhase("error");
+      setScanError(err.message || "Le scan a échoué.");
+    }
+  };
+
+  const handleScanClick = async () => {
+    setScanError("");
+    setScanPhase("checking");
+    const running = await isRelayRunning();
+    if (!running) {
+      setScanPhase("no-relay");
+      return;
+    }
+
+    const saved = getSavedScanner();
+    if (saved) {
+      runScan(saved);
+      return;
+    }
+
+    setScanPhase("checking");
+    try {
+      const scanners = await discoverScanners();
+      if (scanners.length > 0) {
+        runScan(scanners[0]);
+      } else {
+        setScanPhase("need-ip");
+      }
+    } catch {
+      setScanPhase("need-ip");
+    }
+  };
+
+  const submitManualIp = () => {
+    const host = manualIp.trim();
+    if (!host) return;
+    runScan({ host, port: 80, https: false, root: "eSCL" });
   };
 
   const onConnectDrive = async () => {
@@ -309,11 +389,28 @@ export default function ExpenseForm({ initial, existingFilenames = [], onSubmit,
             </label>
             {!file ? (
               <div className="grid grid-cols-2 gap-2">
-                <label className="cursor-pointer flex flex-col items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-800/70 transition px-3 py-3 text-center">
-                  <Camera size={18} className="text-slate-300" />
-                  <span className="text-xs text-slate-300">Photographier</span>
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onFileChange} />
-                </label>
+                {isLikelyDesktop() ? (
+                  <button
+                    type="button"
+                    onClick={handleScanClick}
+                    disabled={scanPhase === "checking" || scanPhase === "scanning"}
+                    className="cursor-pointer flex flex-col items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-800/70 transition px-3 py-3 text-center disabled:opacity-60"
+                  >
+                    <ScanLine size={18} className="text-slate-300" />
+                    <span className="text-xs text-slate-300">
+                      {scanPhase === "checking" && "Recherche…"}
+                      {scanPhase === "scanning" && "Numérisation…"}
+                      {(scanPhase === "idle" || scanPhase === "error" || scanPhase === "no-relay" || scanPhase === "need-ip") &&
+                        "Scanner (imprimante réseau)"}
+                    </span>
+                  </button>
+                ) : (
+                  <label className="cursor-pointer flex flex-col items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-800/70 transition px-3 py-3 text-center">
+                    <Camera size={18} className="text-slate-300" />
+                    <span className="text-xs text-slate-300">Photographier</span>
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onFileChange} />
+                  </label>
+                )}
                 <label className="cursor-pointer flex flex-col items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-800/70 transition px-3 py-3 text-center">
                   <FileText size={18} className="text-slate-300" />
                   <span className="text-xs text-slate-300">Importer PDF/image</span>
@@ -340,6 +437,62 @@ export default function ExpenseForm({ initial, existingFilenames = [], onSubmit,
                 </button>
               </div>
             )}
+
+            {!file && isLikelyDesktop() && scanPhase === "no-relay" && (
+              <div className="mt-2 rounded-lg bg-amber-400/10 border border-amber-400/30 px-3 py-2">
+                <p className="text-xs text-amber-300">
+                  Relais scanner introuvable. Vérifie que "AlfredScanRelay" tourne sur ce PC (une fenêtre de
+                  console doit être ouverte), puis réessaie. Sinon, scanne via l'appli Windows et utilise
+                  "Importer PDF/image".
+                </p>
+                <button
+                  type="button"
+                  onClick={handleScanClick}
+                  className="mt-1.5 text-xs text-sky-300 hover:text-sky-200"
+                >
+                  Réessayer
+                </button>
+              </div>
+            )}
+
+            {!file && isLikelyDesktop() && scanPhase === "need-ip" && (
+              <div className="mt-2 rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 space-y-1.5">
+                <p className="text-xs text-slate-400">
+                  Imprimante non trouvée automatiquement sur le réseau. Saisis son adresse IP (visible dans les
+                  paramètres réseau de l'imprimante) :
+                </p>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={manualIp}
+                    onChange={(e) => setManualIp(e.target.value)}
+                    placeholder="Ex : 192.168.1.42"
+                    className="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-sky-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={submitManualIp}
+                    className="rounded-lg bg-sky-400 text-slate-950 text-xs font-medium px-3 py-1.5 hover:bg-sky-300 transition"
+                  >
+                    Scanner
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!file && isLikelyDesktop() && scanPhase === "error" && (
+              <div className="mt-2 rounded-lg bg-red-400/10 border border-red-400/30 px-3 py-2 space-y-1">
+                <p className="text-xs text-red-300">{scanError}</p>
+                <button
+                  type="button"
+                  onClick={() => setScanPhase("need-ip")}
+                  className="text-xs text-sky-300 hover:text-sky-200"
+                >
+                  Changer d'adresse imprimante
+                </button>
+              </div>
+            )}
+
             {ocrStatus && (
               <p className={`text-xs mt-1.5 ${ocrFound ? "text-emerald-400" : "text-slate-500"}`}>
                 {ocrStatus}

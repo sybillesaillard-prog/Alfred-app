@@ -17,6 +17,7 @@ import {
   connectMailbox,
   searchTaskCandidates,
   guessSenderName,
+  buildGmailSearchLink,
 } from "../lib/mailboxAuth";
 import {
   getMailTasksSyncState,
@@ -118,6 +119,11 @@ export default function MailTasks() {
             task: f.task,
             from: guessSenderName(c.from),
             subject: c.subject,
+            // Lien vers le mail d'origine (26/08/2026, demande de Sybille) —
+            // construit à partir de l'en-tête Message-ID, pas de l'id API
+            // Gmail (cf. commentaire de buildGmailSearchLink dans
+            // mailboxAuth.js). `null` si l'en-tête est absent.
+            mailUrl: buildGmailSearchLink(c.messageIdHeader),
           });
         }
         // La date de dernière vérification n'avance QUE si la recherche ET
@@ -145,6 +151,11 @@ export default function MailTasks() {
       dueDate: null,
       note: `Depuis un mail de ${s.from}${s.subject ? ` — "${s.subject}"` : ""} (${s.mailboxLabel})`,
       done: false,
+      // Lien cliquable vers le mail d'origine (26/08/2026, demande de
+      // Sybille) — champ ignoré par TaskForm mais préservé tel quel par
+      // Firestore updateDoc() (mise à jour partielle) si la tâche est
+      // ensuite modifiée depuis /taches.
+      link: s.mailUrl || null,
     });
     setAddedKeys((prev) => new Set(prev).add(s.key));
   };
@@ -256,6 +267,20 @@ export default function MailTasks() {
           <p className="text-xs text-slate-500 truncate">
             {s.from}
             {s.subject ? ` — ${s.subject}` : ""}
+            {s.mailUrl && (
+              <>
+                {" — "}
+                <a
+                  href={s.mailUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-400 hover:text-sky-300"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  voir le mail
+                </a>
+              </>
+            )}
           </p>
         </div>
         <button

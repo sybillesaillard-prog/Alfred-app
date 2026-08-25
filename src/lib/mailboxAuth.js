@@ -204,8 +204,16 @@ export async function searchTaskCandidates(mailboxKey, afterDateISO) {
 
   const results = [];
   for (const m of messages) {
+    // "Message-ID" (l'en-tête RFC822, PAS l'id renvoyé par l'API Gmail
+    // elle-même) en plus de From/Subject/Date — nécessaire pour construire
+    // un lien cliquable vers le mail (cf. buildGmailSearchLink ci-dessous) :
+    // un lien direct à partir du seul id de l'API (ex. `#all/<id-api>`)
+    // n'est pas fiable (ne marche que si Gmail est déjà ouvert dans un
+    // onglet), alors que la recherche Gmail `rfc822msgid:` sur ce vrai
+    // en-tête l'est (26/08/2026, demande de Sybille : ajouter un lien vers
+    // le mail concerné dans la tâche créée).
     const res = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID`,
       { headers: authHeaders(mailboxKey) }
     );
     if (!res.ok) continue;
@@ -217,11 +225,26 @@ export async function searchTaskCandidates(mailboxKey, afterDateISO) {
       from: decodeHeader(headers, "From"),
       subject: decodeHeader(headers, "Subject"),
       dateHeader: decodeHeader(headers, "Date"),
+      messageIdHeader: decodeHeader(headers, "Message-ID"),
       internalDate: data.internalDate ? Number(data.internalDate) : null,
       snippet: data.snippet || "",
     });
   }
   return results;
+}
+
+// Construit un lien Gmail cliquable vers UN mail précis, à partir de son
+// en-tête RFC822 "Message-ID" (PAS l'id renvoyé par l'API Gmail — celui-ci
+// ne permet pas de lien fiable, cf. commentaire ci-dessus). Utilise
+// l'opérateur de recherche Gmail `rfc822msgid:`, qui retombe directement sur
+// le mail quand il est seul résultat — plus fiable qu'un lien `#all/<id>` à
+// froid (onglet Gmail pas encore ouvert). `null` si l'en-tête est absent
+// (rare, mais pas garanti sur tous les mails).
+export function buildGmailSearchLink(messageIdHeader) {
+  if (!messageIdHeader) return null;
+  const clean = messageIdHeader.trim().replace(/^<|>$/g, "");
+  if (!clean) return null;
+  return `https://mail.google.com/mail/u/0/#search/rfc822msgid:${encodeURIComponent(clean)}`;
 }
 
 // Même heuristique que gmail.js/guessSenderName — dupliquée ici plutôt que

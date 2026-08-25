@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Trash2, Check, StickyNote } from "lucide-react";
+import { Plus, Trash2, Check, StickyNote, Mail } from "lucide-react";
 import { useCollection } from "../lib/useCollection";
 import TaskForm from "../components/TaskForm";
 
@@ -197,6 +197,24 @@ export default function Tasks() {
                     <span title={t.note} className="text-slate-600 shrink-0">
                       <StickyNote size={12} />
                     </span>
+                  )}
+                  {t.link && (
+                    // Lien vers le mail d'origine (26/08/2026, demande de
+                    // Sybille), présent uniquement sur les tâches créées
+                    // depuis "Tâches (mails)" — cf. MailTasks.jsx. Le clic ne
+                    // doit pas déclencher l'ouverture du formulaire d'édition
+                    // (le lien est niché dans le bouton d'édition de la
+                    // ligne), d'où le stopPropagation.
+                    <a
+                      href={t.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Voir le mail d'origine"
+                      className="text-slate-600 hover:text-sky-400 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Mail size={12} />
+                    </a>
                   )}
                 </div>
               </button>

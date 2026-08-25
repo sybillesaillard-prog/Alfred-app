@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Camera, FileText, Download, Cloud, CloudCheck, ScanLine } from "lucide-react";
 import { EXPENSE_CATEGORIES } from "../lib/expenseCategories";
 import {
@@ -25,10 +25,10 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 
 // Un ancien enregistrement n'a qu'un "amount" (pas de ht/tva/ttc) : on le
 // traite comme TTC connu, TVA inconnue (0), pour ne rien casser à l'édition.
-function initialFieldsFrom(initial) {
+function initialFieldsFrom(initial, initialFournisseur) {
   if (!initial) {
     return {
-      fournisseur: "",
+      fournisseur: initialFournisseur || "",
       date: todayISO(),
       category: EXPENSE_CATEGORIES[0].id,
       rate: 0.2,
@@ -60,8 +60,21 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
-export default function ExpenseForm({ initial, existingFilenames = [], onSubmit, onClose }) {
-  const f0 = initialFieldsFrom(initial);
+// initialFournisseur/initialFile : utilisés pour pré-remplir une NOUVELLE
+// dépense (jamais en édition, initial doit rester null dans ce cas) à
+// partir d'une pièce jointe déjà récupérée ailleurs — ex. une facture PDF
+// téléchargée depuis Gmail (cf. src/pages/GmailInvoices.jsx). Le fichier
+// suit exactement le même chemin (aperçu, OCR si image, upload Drive) qu'un
+// fichier choisi via "Photographier"/"Importer"/"Scanner".
+export default function ExpenseForm({
+  initial,
+  existingFilenames = [],
+  initialFournisseur,
+  initialFile,
+  onSubmit,
+  onClose,
+}) {
+  const f0 = initialFieldsFrom(initial, initialFournisseur);
   const [fournisseur, setFournisseur] = useState(f0.fournisseur);
   const [date, setDate] = useState(f0.date);
   const [category, setCategory] = useState(f0.category);
@@ -189,6 +202,15 @@ export default function ExpenseForm({ initial, existingFilenames = [], onSubmit,
     if (!f) return;
     processAcquiredFile(f);
   };
+
+  // Charge automatiquement le fichier fourni par l'appelant (ex. facture
+  // PDF Gmail) une seule fois, dès l'ouverture du formulaire — sans que
+  // l'utilisatrice ait besoin de re-choisir un fichier qu'elle a déjà
+  // sélectionné en amont.
+  useEffect(() => {
+    if (initialFile) processAcquiredFile(initialFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Lance un scan via le relais local (src/lib/scanRelay.js). Enchaîne :
   // relais lancé ? imprimante déjà connue (mémorisée) ou découverte

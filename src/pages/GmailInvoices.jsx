@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Mail, RefreshCw, FileText, Settings2, Star } from "lucide-react";
+import { Mail, RefreshCw, FileText, Settings2, Star, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCollection } from "../lib/useCollection";
 import {
@@ -63,6 +63,10 @@ export default function GmailInvoices() {
   const [checkError, setCheckError] = useState("");
   const [rows, setRows] = useState(null); // null = jamais vérifié cette session
   const [importedKeys, setImportedKeys] = useState(() => new Set());
+  // Candidats écartés manuellement ("Ignorer") — mémorisés le temps de la
+  // session seulement (comme importedKeys), pour ne plus les proposer tant
+  // que la liste actuelle est affichée, sans toucher à Gmail ni Firestore.
+  const [ignoredKeys, setIgnoredKeys] = useState(() => new Set());
 
   const [showSettings, setShowSettings] = useState(false);
   const [sendersDraft, setSendersDraft] = useState("");
@@ -146,12 +150,16 @@ export default function GmailInvoices() {
     }
   };
 
-  const visibleRows = (rows || []).filter((r) => !importedKeys.has(r.key));
+  const onIgnoreClick = (row) => {
+    setIgnoredKeys((prev) => new Set(prev).add(row.key));
+  };
+
+  const visibleRows = (rows || []).filter((r) => !importedKeys.has(r.key) && !ignoredKeys.has(r.key));
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold">Boîte mail</h1>
+        <h1 className="text-xl font-semibold">Import depuis Gmail</h1>
         <button
           onClick={() => setShowSettings((v) => !v)}
           className="text-slate-400 hover:text-slate-200 p-1.5"
@@ -270,6 +278,15 @@ export default function GmailInvoices() {
                       className="shrink-0 rounded-lg border border-sky-400/30 bg-sky-400/10 text-sky-300 text-xs font-medium px-3 py-1.5 hover:bg-sky-400/20 transition disabled:opacity-60"
                     >
                       {importing?.row?.key === row.key ? "Téléchargement…" : "Importer"}
+                    </button>
+                    <button
+                      onClick={() => onIgnoreClick(row)}
+                      disabled={importing?.row?.key === row.key}
+                      aria-label="Ignorer"
+                      title="Ignorer"
+                      className="shrink-0 rounded-lg border border-slate-700 text-slate-500 p-1.5 hover:bg-slate-800 hover:text-slate-300 transition disabled:opacity-60"
+                    >
+                      <X size={15} />
                     </button>
                   </div>
                 ))

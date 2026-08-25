@@ -50,13 +50,16 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        // Les fichiers du moteur OCR (worker/core wasm ~4 Mo) et la
+        // Les fichiers du moteur OCR (worker/core wasm ~4 Mo), la
         // bibliothèque d'export XLS (exceljs, ~900 Ko, chargée à la demande
-        // via import() uniquement au clic sur "Exporter en XLS") ne doivent
-        // pas être forcés dans le pré-cache obligatoire de l'app — ils ne
-        // sont utiles qu'à l'usage de ces fonctionnalités précises, pas à
-        // chaque ouverture. Ils seront simplement chargés à la demande.
-        globIgnores: ['**/tesseract/**', '**/exceljs*'],
+        // via import() uniquement au clic sur "Exporter en XLS") et la
+        // bibliothèque de lecture PDF (pdfjs-dist, ~1,2 Mo avec son worker,
+        // chargée à la demande uniquement à l'import d'un PDF, cf.
+        // src/lib/ocr.js) ne doivent pas être forcés dans le pré-cache
+        // obligatoire de l'app — ils ne sont utiles qu'à l'usage de ces
+        // fonctionnalités précises, pas à chaque ouverture. Ils seront
+        // simplement chargés à la demande.
+        globIgnores: ['**/tesseract/**', '**/exceljs*', '**/pdf.worker*', '**/pdfjs*'],
         // Le service worker intercepte toutes les requêtes de navigation et
         // les fait retomber sur l'app React (index.html) — ce qui écrasait
         // silencieusement les pages de prototype statiques comme

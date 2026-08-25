@@ -28,12 +28,56 @@ function getWorker(onProgress) {
   return workerPromise;
 }
 
-// Lit le texte brut d'une image de ticket/facture. Ne s'applique qu'aux
-// images (une vraie capture photo) — un PDF importé n'est pas passé à l'OCR.
+// Lit le texte brut d'une image de ticket/facture (OCR — reconnaissance,
+// donc potentiellement imprécise). Ne s'applique qu'aux images (une vraie
+// capture photo).
 export async function recognizeReceiptText(file, onProgress) {
   const worker = await getWorker(onProgress);
   const { data } = await worker.recognize(file);
   return data.text || "";
+}
+
+// pdfjs-dist (~1,2 Mo avec son worker) n'est chargé qu'à la demande — import
+// dynamique plutôt qu'en tête de fichier — pour ne pas alourdir le
+// chargement initial de l'appli avec un module utile seulement à l'import
+// d'un PDF. Le worker est résolu via l'import "?url" de Vite, qui renvoie
+// son URL finale déjà correcte vis-à-vis du base path déployé (ex.
+// "/Alfred-app/") — exactement pour éviter de reproduire le bug de chemin
+// absolu codé en dur qui cassait l'OCR Tesseract sous GitHub Pages (cf.
+// commentaire sur getWorker ci-dessus).
+let pdfjsLibPromise = null;
+function getPdfjsLib() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = Promise.all([
+      import("pdfjs-dist"),
+      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+    ]).then(([pdfjsLib, workerUrlModule]) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrlModule.default;
+      return pdfjsLib;
+    });
+  }
+  return pdfjsLibPromise;
+}
+
+// Extrait le texte "en dur" d'un PDF généré numériquement (facture
+// email/PDF classique) via pdfjs-dist — PAS de l'OCR : on lit directement le
+// calque de texte du PDF, donc un résultat exact (aucune erreur de
+// reconnaissance possible), bien plus fiable que l'OCR sur une photo. Si le
+// PDF est en réalité une image scannée sans calque de texte (facture reçue
+// scannée), le texte extrait sera vide ou quasi vide — c'est détecté par
+// l'appelant, qui affiche alors un message adapté plutôt que d'essayer une
+// extraction impossible.
+export async function extractPdfText(file) {
+  const pdfjsLib = await getPdfjsLib();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map((it) => it.str).join(" ") + "\n";
+  }
+  return text;
 }
 
 // ---------- Extraction heuristique des champs depuis le texte OCR brut ----------

@@ -10,7 +10,7 @@ import {
   buildFilename,
 } from "../lib/vat";
 import { fileToPdfBlob, downloadBlob } from "../lib/pdf";
-import { recognizeReceiptText, extractReceiptFields } from "../lib/ocr";
+import { recognizeReceiptText, extractPdfText, extractReceiptFields } from "../lib/ocr";
 import { isDriveConnected, connectDrive, uploadReceiptToDrive } from "../lib/googleDrive";
 import {
   isLikelyDesktop,
@@ -147,54 +147,83 @@ export default function ExpenseForm({
     setTtc(tt ? String(tt) : "");
   };
 
+  // Applique les champs détectés (par OCR image ou lecture directe de PDF)
+  // au formulaire — logique partagée entre les deux modes de lecture
+  // automatique, seul le message de statut en cas d'échec diffère.
+  const applyExtractedFields = (fields, sourceLabel) => {
+    if (fields.fournisseur) setFournisseur(fields.fournisseur);
+    if (fields.date) setDate(fields.date);
+    if (fields.rate != null) {
+      const asFraction = fields.rate / 100;
+      if (isStandardRate(asFraction)) {
+        setRateSel(asFraction);
+      } else {
+        setRateSel("custom");
+        setCustomRate(String(fields.rate));
+      }
+    }
+    if (fields.ht != null) setHt(String(fields.ht));
+    if (fields.tva != null) setTva(String(fields.tva));
+    if (fields.ttc != null) setTtc(String(fields.ttc));
+
+    if (fields.ttc != null) {
+      setOcrFound(true);
+      setOcrStatus("Champs détectés automatiquement — vérifie avant d'enregistrer.");
+    } else {
+      setOcrStatus(`Lecture automatique incomplète pour ${sourceLabel} — complète les champs ci-dessous.`);
+    }
+  };
+
   // Point d'entrée commun une fois qu'on a un fichier — qu'il vienne du
   // sélecteur "Photographier"/"Importer" (téléphone/PC) ou du scanner réseau
-  // (PC uniquement, cf. handleScanClick ci-dessous) : même prévisualisation,
-  // même lecture automatique OCR.
+  // (PC uniquement, cf. handleScanClick ci-dessous). Deux modes de lecture
+  // automatique selon le type de fichier : OCR (reconnaissance, donc
+  // approximative) pour une image, ou lecture directe du calque de texte
+  // (exacte, aucune reconnaissance) pour un PDF généré numériquement — bien
+  // plus fiable, comme le texte n'est jamais "deviné".
   const processAcquiredFile = (f) => {
     if (!f) return;
     setFile(f);
     setOcrFound(false);
     const isImage = f.type.startsWith("image/");
+    const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
     setFilePreviewUrl(isImage ? URL.createObjectURL(f) : null);
 
-    if (!isImage) {
-      setOcrStatus("");
+    if (isImage) {
+      setOcrStatus("Lecture automatique en cours…");
+      recognizeReceiptText(f, (m) => {
+        const pct = Math.round((m.progress || 0) * 100);
+        setOcrStatus(`${m.status === "recognizing text" ? "Lecture" : "Préparation"}… ${pct}%`);
+      })
+        .then((text) => applyExtractedFields(extractReceiptFields(text), "cette photo"))
+        .catch(() => {
+          setOcrStatus("Lecture automatique impossible pour cette photo — remplis les champs ci-dessous.");
+        });
       return;
     }
 
-    setOcrStatus("Lecture automatique en cours…");
-    recognizeReceiptText(f, (m) => {
-      const pct = Math.round((m.progress || 0) * 100);
-      setOcrStatus(`${m.status === "recognizing text" ? "Lecture" : "Préparation"}… ${pct}%`);
-    })
-      .then((text) => {
-        const fields = extractReceiptFields(text);
-        if (fields.fournisseur) setFournisseur(fields.fournisseur);
-        if (fields.date) setDate(fields.date);
-        if (fields.rate != null) {
-          const asFraction = fields.rate / 100;
-          if (isStandardRate(asFraction)) {
-            setRateSel(asFraction);
-          } else {
-            setRateSel("custom");
-            setCustomRate(String(fields.rate));
+    if (isPdf) {
+      setOcrStatus("Lecture du PDF en cours…");
+      extractPdfText(f)
+        .then((text) => {
+          // Un PDF scanné (une image, sans calque de texte réel) renvoie un
+          // texte vide ou quasi vide — inutile d'essayer d'en extraire des
+          // champs, on prévient juste que la saisie sera manuelle.
+          if (!text || text.trim().length < 5) {
+            setOcrStatus(
+              "Ce PDF semble être une image scannée (pas de texte détecté) — remplis les champs ci-dessous."
+            );
+            return;
           }
-        }
-        if (fields.ht != null) setHt(String(fields.ht));
-        if (fields.tva != null) setTva(String(fields.tva));
-        if (fields.ttc != null) setTtc(String(fields.ttc));
+          applyExtractedFields(extractReceiptFields(text), "ce PDF");
+        })
+        .catch(() => {
+          setOcrStatus("Lecture automatique impossible pour ce PDF — remplis les champs ci-dessous.");
+        });
+      return;
+    }
 
-        if (fields.ttc != null) {
-          setOcrFound(true);
-          setOcrStatus("Champs détectés automatiquement — vérifie avant d'enregistrer.");
-        } else {
-          setOcrStatus("Lecture automatique incomplète pour cette photo — complète les champs ci-dessous.");
-        }
-      })
-      .catch(() => {
-        setOcrStatus("Lecture automatique impossible pour cette photo — remplis les champs ci-dessous.");
-      });
+    setOcrStatus("");
   };
 
   const onFileChange = (e) => {
@@ -538,9 +567,9 @@ export default function ExpenseForm({
                     type="button"
                     onClick={onConnectDrive}
                     disabled={driveBusy}
-                    className="flex items-center gap-1.5 text-xs text-sky-300 hover:text-sky-200 disabled:opacity-60"
+                    className="w-full flex items-center justify-center gap-2 rounded-lg border border-sky-400/40 bg-sky-400/10 text-sky-300 text-sm font-medium px-3 py-2.5 hover:bg-sky-400/20 transition disabled:opacity-60"
                   >
-                    <Cloud size={14} />
+                    <Cloud size={16} />
                     {driveBusy ? "Connexion…" : "Connecter Google Drive pour sauvegarder ce fichier"}
                   </button>
                 )}

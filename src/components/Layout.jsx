@@ -7,7 +7,7 @@ const navItems = [
   { to: "/charges-fixes", label: "Charges fixes", icon: CalendarClock },
   { to: "/charges-variables", label: "Charges variables", icon: TrendingUp },
   { to: "/taches", label: "Tâches", icon: ListTodo },
-  { to: "/boite-mail", label: "Boîte mail", icon: Mail },
+  { to: "/boite-mail", label: "Import depuis Gmail", icon: Mail },
 ];
 
 export default function Layout() {

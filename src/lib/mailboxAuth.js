@@ -144,10 +144,16 @@ function invalidateOnAuthError(mailboxKey, status) {
 // la toute première utilisation d'une boîte — demande explicite de Sybille
 // le 25/08/2026, pour que la toute première mise en route retrouve aussi
 // les tâches un peu plus anciennes, pas seulement les tout derniers jours),
-// en excluant les catégories Gmail "Promotions" et "Réseaux sociaux" qui ne
-// contiennent quasiment jamais de vraie action à faire — pour limiter le
-// volume envoyé à l'IA (donc le coût) sans risquer de rater une vraie tâche
-// dans les autres catégories (Principale, Notifications...).
+// limitée à l'onglet Gmail "Principale" (`category:primary`) — resserré le
+// 25/08/2026 à la demande de Sybille : les newsletters/pubs/notifications
+// (Promotions, Réseaux sociaux, mais aussi Mises à jour/Forums, qui
+// contiennent surtout des confirmations automatiques et des notifications)
+// ne contiennent quasiment jamais de vraie action à faire, et risquaient de
+// remplir le plafond de candidats (150 sur la 1ère vérification, cf.
+// MAX_CANDIDATES_FIRST_CHECK ci-dessous) avant même d'atteindre les vrais
+// mails à traiter. `category:primary` correspond exactement à l'onglet
+// "Principale" que Sybille voit dans Gmail — plus fiable qu'exclure les
+// autres catégories une par une.
 const INITIAL_LOOKBACK_DAYS = 90;
 
 function buildQuery(afterDateISO) {
@@ -155,7 +161,7 @@ function buildQuery(afterDateISO) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `after:${y}/${m}/${day} -category:promotions -category:social`;
+  return `after:${y}/${m}/${day} category:primary`;
 }
 
 function decodeHeader(headers, name) {

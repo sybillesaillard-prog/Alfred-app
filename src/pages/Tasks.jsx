@@ -13,13 +13,32 @@ const PRIORITY_STYLE = {
 export default function Tasks() {
   const { items, loading, add, update, remove } = useCollection("tasks");
   const [filter, setFilter] = useState("all"); // all | perso | pro
+  const [subFilter, setSubFilter] = useState("all"); // all | <nom de sous-catégorie>
   const [showDone, setShowDone] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
 
+  // Sous-catégories disponibles pour le filtre secondaire, limitées à celles
+  // réellement utilisées par des tâches correspondant au filtre perso/pro
+  // actuel (25/08/2026, demande de Sybille : pouvoir trier par sous-catégorie
+  // en plus de perso/pro).
+  const availableSubcategories = useMemo(() => {
+    const set = new Set();
+    for (const t of items) {
+      if ((filter === "all" || t.category === filter) && t.subcategory) set.add(t.subcategory);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [items, filter]);
+
+  const changeFilter = (id) => {
+    setFilter(id);
+    setSubFilter("all"); // évite un sous-filtre qui n'existe plus pour la nouvelle catégorie
+  };
+
   const filtered = useMemo(() => {
     return items
       .filter((t) => filter === "all" || t.category === filter)
+      .filter((t) => subFilter === "all" || t.subcategory === subFilter)
       .filter((t) => showDone || !t.done)
       .sort((a, b) => {
         if (a.done !== b.done) return a.done ? 1 : -1;
@@ -31,7 +50,7 @@ export default function Tasks() {
         if (b.dueDate) return 1;
         return 0;
       });
-  }, [items, filter, showDone]);
+  }, [items, filter, subFilter, showDone]);
 
   const counts = useMemo(() => {
     const open = items.filter((t) => !t.done);
@@ -68,7 +87,7 @@ export default function Tasks() {
         </button>
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         {[
           { id: "all", label: `Toutes (${counts.all})` },
           { id: "perso", label: `Perso (${counts.perso})` },
@@ -76,7 +95,7 @@ export default function Tasks() {
         ].map((f) => (
           <button
             key={f.id}
-            onClick={() => setFilter(f.id)}
+            onClick={() => changeFilter(f.id)}
             className={`px-3 py-1.5 rounded-full text-sm border transition ${
               filter === f.id
                 ? "bg-sky-400/10 border-sky-400/40 text-sky-300"
@@ -93,6 +112,24 @@ export default function Tasks() {
           {showDone ? "Masquer terminées" : "Voir terminées"}
         </button>
       </div>
+
+      {availableSubcategories.length > 0 && (
+        <div className="flex items-center gap-2 mb-4">
+          <label className="text-xs text-slate-500">Sous-catégorie</label>
+          <select
+            value={subFilter}
+            onChange={(e) => setSubFilter(e.target.value)}
+            className="bg-slate-900 border border-slate-800 rounded-md px-2 py-1 text-xs text-slate-300"
+          >
+            <option value="all">Toutes</option>
+            {availableSubcategories.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-slate-500 text-sm text-center py-8">Chargement…</p>

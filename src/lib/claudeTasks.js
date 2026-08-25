@@ -66,6 +66,104 @@ export function setClaudeModelKey(key) {
   }
 }
 
+// --- Compteur de consommation (25/08/2026, demande de Sybille) ----------
+// L'API Anthropic ne fournit pas d'endpoit accessible depuis une simple clé
+// API pour lire le VRAI solde restant de son compte (ça nécessite un accès
+// "Admin"/organisation séparé, pas la clé API classique utilisée ici) — donc
+// pas de "combien il reste" fiable à 100 %. Ce qu'on peut faire, et qui
+// couvre le besoin en pratique : additionner localement, à chaque appel, les
+// tokens réellement consommés (renvoyés par l'API elle-même dans sa
+// réponse — champ `usage`) et en déduire un coût estimé avec les tarifs
+// publics du modèle utilisé. Si Sybille renseigne en plus le montant de
+// crédit qu'elle a acheté sur la Console Anthropic, on peut alors afficher
+// une estimation de crédit restant (= crédit initial - coût cumulé estimé
+// ici) — une estimation propre à CET appareil/navigateur (elle ne verra pas
+// une consommation faite ailleurs avec la même clé, le cas échéant).
+const USAGE_STORAGE = "alfred_claude_usage";
+const CREDIT_STORAGE = "alfred_claude_credit_usd";
+
+// Tarifs publics par million de tokens, en dollars (vérifiés le 25/08/2026,
+// cf. claude/app-alfred-notes.md — à mettre à jour si Anthropic change ses
+// prix). Sert uniquement à l'ESTIMATION du compteur ci-dessous, jamais à la
+// facturation réelle (qui se fait directement entre Sybille et Anthropic).
+const PRICING_USD_PER_MTOK = {
+  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
+  "claude-sonnet-5": { input: 2, output: 10 },
+};
+
+export function getUsageStats() {
+  try {
+    const raw = localStorage.getItem(USAGE_STORAGE);
+    if (!raw) return { inputTokens: 0, outputTokens: 0, costUSD: 0 };
+    const parsed = JSON.parse(raw);
+    return {
+      inputTokens: parsed.inputTokens || 0,
+      outputTokens: parsed.outputTokens || 0,
+      costUSD: parsed.costUSD || 0,
+    };
+  } catch {
+    return { inputTokens: 0, outputTokens: 0, costUSD: 0 };
+  }
+}
+
+export function resetUsageStats() {
+  try {
+    localStorage.removeItem(USAGE_STORAGE);
+  } catch {
+    // ignore
+  }
+}
+
+function recordUsage(modelId, usage) {
+  if (!usage) return;
+  const inputTokens = usage.input_tokens || 0;
+  const outputTokens = usage.output_tokens || 0;
+  const pricing = PRICING_USD_PER_MTOK[modelId];
+  const cost = pricing
+    ? (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output
+    : 0;
+  try {
+    const prev = getUsageStats();
+    localStorage.setItem(
+      USAGE_STORAGE,
+      JSON.stringify({
+        inputTokens: prev.inputTokens + inputTokens,
+        outputTokens: prev.outputTokens + outputTokens,
+        costUSD: prev.costUSD + cost,
+      })
+    );
+  } catch {
+    // ignore
+  }
+}
+
+// Crédit initial (en $) que Sybille a acheté sur la Console Anthropic,
+// saisi une fois dans les réglages — sert uniquement à calculer le "reste
+// estimé" affiché ; `null` si jamais renseigné (affichage se limite alors
+// à la consommation, sans estimation de reste).
+export function getCreditBalanceUSD() {
+  try {
+    const raw = localStorage.getItem(CREDIT_STORAGE);
+    if (raw === null || raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCreditBalanceUSD(amount) {
+  try {
+    if (amount === null || amount === "" || Number.isNaN(Number(amount))) {
+      localStorage.removeItem(CREDIT_STORAGE);
+    } else {
+      localStorage.setItem(CREDIT_STORAGE, String(Number(amount)));
+    }
+  } catch {
+    // ignore
+  }
+}
+
 // Tronque l'aperçu envoyé à l'IA — un `snippet` Gmail fait déjà ~100-200
 // caractères, cette limite est surtout une garde-fou si jamais un champ
 // anormalement long passait au travers.
@@ -158,6 +256,7 @@ export async function analyzeMailsForTasks(mailboxLabel, category, messages) {
     throw new Error(`L'analyse par l'IA a échoué (erreur ${res.status}).`);
   }
   const data = await res.json();
+  recordUsage(modelId, data.usage);
   const toolUse = (data.content || []).find((b) => b.type === "tool_use" && b.name === "flag_actionable_emails");
   const results = toolUse?.input?.results || [];
   return results.filter((r) => r.needsAction && r.task).map((r) => ({ id: r.id, task: r.task }));

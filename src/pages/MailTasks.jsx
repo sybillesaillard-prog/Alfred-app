@@ -31,6 +31,10 @@ import {
   setClaudeModelKey,
   CLAUDE_MODELS,
   analyzeMailsForTasks,
+  getUsageStats,
+  resetUsageStats,
+  getCreditBalanceUSD,
+  setCreditBalanceUSD,
 } from "../lib/claudeTasks";
 
 // Recherche, une fois par jour sur clic (jamais automatique — même
@@ -61,11 +65,16 @@ export default function MailTasks() {
   const [newMailboxLabel, setNewMailboxLabel] = useState("");
   const [newMailboxCategory, setNewMailboxCategory] = useState("pro");
 
+  const [usageStats, setUsageStats] = useState(() => getUsageStats());
+  const [creditDraft, setCreditDraft] = useState("");
+
   useEffect(() => {
     if (!user) return;
     getMailTasksSyncState(user.uid).then(setSyncState);
     setApiKeyDraft(getClaudeApiKey());
     setModelDraft(getClaudeModelKey());
+    const credit = getCreditBalanceUSD();
+    setCreditDraft(credit === null ? "" : String(credit));
   }, [user]);
 
   const mailboxes = syncState.mailboxes;
@@ -122,6 +131,7 @@ export default function MailTasks() {
       }
     }
     setSuggestions((prev) => [...prev, ...collected]);
+    setUsageStats(getUsageStats());
     setChecking(false);
   };
 
@@ -155,6 +165,18 @@ export default function MailTasks() {
     setClaudeApiKey(apiKeyDraft.trim());
     setClaudeModelKey(modelDraft);
   };
+
+  const saveCreditBalance = () => {
+    setCreditBalanceUSD(creditDraft.trim());
+  };
+
+  const onResetUsage = () => {
+    resetUsageStats();
+    setUsageStats(getUsageStats());
+  };
+
+  const creditBalance = getCreditBalanceUSD();
+  const remainingUSD = creditBalance !== null ? creditBalance - usageStats.costUSD : null;
 
   const addMailbox = async () => {
     if (!newMailboxLabel.trim() || !user) return;
@@ -264,9 +286,13 @@ export default function MailTasks() {
         </button>
       </div>
 
-      <p className="text-slate-400 text-sm mb-4">
+      <p className="text-slate-400 text-sm mb-1">
         Repère, une fois par clic (jamais automatique), les mails perso et pro qui attendent une réponse
         ou une action — les suggestions retenues s'ajoutent d'un clic à ta liste de tâches habituelle.
+      </p>
+      <p className="text-xs text-slate-500 mb-4">
+        Consommation IA estimée : {usageStats.inputTokens + usageStats.outputTokens} tokens (≈{" "}
+        {usageStats.costUSD.toFixed(3)} $){remainingUSD !== null && <> · reste ≈ {remainingUSD.toFixed(2)} $</>}
       </p>
 
       {showSettings && (
@@ -304,6 +330,45 @@ export default function MailTasks() {
           >
             Enregistrer
           </button>
+
+          <div className="border-t border-slate-800 pt-3">
+            <p className="text-sm text-slate-400 mb-1">Suivi de consommation IA</p>
+            <p className="text-xs text-slate-500 mb-2">
+              Anthropic ne permet pas de lire le vrai solde de ton compte depuis cette clé API — ce compteur
+              additionne localement (dans ce navigateur) les tokens réellement consommés à chaque vérification,
+              pour une estimation. Renseigne le crédit acheté sur la Console Anthropic pour voir un reste estimé.
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={creditDraft}
+                onChange={(e) => setCreditDraft(e.target.value)}
+                placeholder="Crédit acheté ($)"
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm"
+              />
+              <button
+                onClick={saveCreditBalance}
+                className="shrink-0 text-xs rounded-lg border border-sky-400/40 text-sky-300 px-2.5 py-1.5 hover:bg-sky-400/10 transition"
+              >
+                Enregistrer
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">
+              {usageStats.inputTokens + usageStats.outputTokens} tokens utilisés au total (≈{" "}
+              {usageStats.costUSD.toFixed(3)} $)
+              {remainingUSD !== null && (
+                <> · reste estimé ≈ {remainingUSD.toFixed(2)} $ sur {creditBalance.toFixed(2)} $</>
+              )}
+            </p>
+            <button
+              onClick={onResetUsage}
+              className="text-xs text-slate-500 hover:text-slate-300 mt-1"
+            >
+              Réinitialiser le compteur
+            </button>
+          </div>
 
           <div className="border-t border-slate-800 pt-3">
             <p className="text-sm text-slate-400 mb-2">Boîtes mail</p>

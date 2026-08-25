@@ -140,13 +140,15 @@ function invalidateOnAuthError(mailboxKey, status) {
 
 // Requête large (pas de filtre "pièce jointe PDF" comme gmail.js — on
 // cherche ici des mails à LIRE, pas des factures à télécharger) : les
-// dernières nouveautés depuis la dernière vérification (ou repli 3 jours à
-// la toute première utilisation d'une boîte), en excluant les catégories
-// Gmail "Promotions" et "Réseaux sociaux" qui ne contiennent quasiment
-// jamais de vraie action à faire — pour limiter le volume envoyé à l'IA
-// (donc le coût) sans risquer de rater une vraie tâche dans les autres
-// catégories (Principale, Notifications...).
-const INITIAL_LOOKBACK_DAYS = 3;
+// dernières nouveautés depuis la dernière vérification (ou repli 3 MOIS à
+// la toute première utilisation d'une boîte — demande explicite de Sybille
+// le 25/08/2026, pour que la toute première mise en route retrouve aussi
+// les tâches un peu plus anciennes, pas seulement les tout derniers jours),
+// en excluant les catégories Gmail "Promotions" et "Réseaux sociaux" qui ne
+// contiennent quasiment jamais de vraie action à faire — pour limiter le
+// volume envoyé à l'IA (donc le coût) sans risquer de rater une vraie tâche
+// dans les autres catégories (Principale, Notifications...).
+const INITIAL_LOOKBACK_DAYS = 90;
 
 function buildQuery(afterDateISO) {
   const d = afterDateISO ? new Date(afterDateISO) : new Date(Date.now() - INITIAL_LOOKBACK_DAYS * 86400000);
@@ -167,13 +169,24 @@ function decodeHeader(headers, name) {
 // personnelle exposée. `snippet` (aperçu ~100-200 caractères fourni
 // directement par l'API Gmail) suffit dans la grande majorité des cas pour
 // juger si un mail attend une action ou non. Limité à 40 mails par
-// vérification, pour borner le coût d'un seul clic sur "Vérifier".
+// vérification "normale" (depuis la dernière vérification mémorisée), pour
+// borner le coût d'un seul clic sur "Vérifier" au quotidien.
 const MAX_CANDIDATES = 40;
+
+// Plafond plus large UNIQUEMENT pour la toute première vérification d'une
+// boîte (fenêtre de 3 mois, voir INITIAL_LOOKBACK_DAYS ci-dessus) — sinon 40
+// candidats risqueraient de ne couvrir que les tout derniers jours de cette
+// fenêtre de 3 mois et de rater des tâches plus anciennes. Le surcoût reste
+// négligeable : quelques centaines de mails de plus dans le même UN SEUL
+// appel groupé à l'IA (cf. claudeTasks.js) représente au pire quelques
+// centimes de plus, jamais un appel par mail.
+const MAX_CANDIDATES_FIRST_CHECK = 150;
 
 export async function searchTaskCandidates(mailboxKey, afterDateISO) {
   const q = buildQuery(afterDateISO);
+  const maxResults = afterDateISO ? MAX_CANDIDATES : MAX_CANDIDATES_FIRST_CHECK;
   const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${MAX_CANDIDATES}`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${maxResults}`,
     { headers: authHeaders(mailboxKey) }
   );
   if (!listRes.ok) {

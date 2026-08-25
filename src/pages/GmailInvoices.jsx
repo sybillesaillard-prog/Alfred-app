@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Mail, RefreshCw, FileText, Settings2, Star, X } from "lucide-react";
+import { Mail, RefreshCw, FileText, Settings2, Star, X, RotateCcw } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCollection } from "../lib/useCollection";
 import {
@@ -75,6 +75,14 @@ export default function GmailInvoices() {
   // session seulement (comme importedKeys), pour ne plus les proposer tant
   // que la liste actuelle est affichée, sans toucher à Gmail ni Firestore.
   const [ignoredKeys, setIgnoredKeys] = useState(() => new Set());
+
+  // "Réinitialiser" (25/08, demande de Sybille) : oublie manuellement la
+  // date de dernière vérification, pour relancer une recherche sur les 90
+  // derniers jours une fois, sans repasser en mode test permanent — la
+  // vérification suivante réécrit `lastCheckedAt` normalement, comme
+  // n'importe quelle vérification (cf. onCheck), donc le comportement
+  // normal reprend tout seul juste après.
+  const [resetting, setResetting] = useState(false);
 
   const [showSettings, setShowSettings] = useState(false);
   const [sendersDraft, setSendersDraft] = useState("");
@@ -166,6 +174,17 @@ export default function GmailInvoices() {
     setIgnoredKeys((prev) => new Set(prev).add(row.key));
   };
 
+  const onResetSync = async () => {
+    if (!user) return;
+    setResetting(true);
+    try {
+      await setLastCheckedAt(user.uid, null);
+      setSyncState((s) => ({ ...s, lastCheckedAt: null }));
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const visibleRows = (rows || []).filter((r) => !importedKeys.has(r.key) && !ignoredKeys.has(r.key));
 
   return (
@@ -252,6 +271,19 @@ export default function GmailInvoices() {
                   ? `Dernière vérification : ${new Date(syncState.lastCheckedAt).toLocaleString("fr-FR")}`
                   : "Jamais vérifié — la première recherche remonte 90 jours en arrière."}
               </p>
+              {!TESTING_IGNORE_SYNC_MEMORY && syncState?.lastCheckedAt && (
+                <button
+                  type="button"
+                  onClick={onResetSync}
+                  disabled={resetting}
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 mt-1 disabled:opacity-60"
+                >
+                  <RotateCcw size={11} className={resetting ? "animate-spin" : ""} />
+                  {resetting
+                    ? "Réinitialisation…"
+                    : "Réinitialiser (relancer une recherche sur les 90 derniers jours)"}
+                </button>
+              )}
             </div>
             <button
               onClick={onCheck}

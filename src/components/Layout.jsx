@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Wallet, CalendarClock, TrendingUp, ListTodo, Mail, Sparkles, LogOut } from "lucide-react";
+import { Wallet, CalendarClock, TrendingUp, ListTodo, Mail, Sparkles, Sprout, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/taches", label: "Tâches", icon: ListTodo },
   { to: "/boite-mail", label: "Import depuis Gmail", icon: Mail },
   { to: "/taches-mail", label: "Tâches (mails)", icon: Sparkles },
+  { to: "/entretien", label: "Entretien", icon: Sprout },
 ];
 
 export default function Layout() {

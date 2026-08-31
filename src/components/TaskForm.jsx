@@ -1,37 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Mic, Square } from "lucide-react";
+import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { SUBCATEGORIES_BY_CATEGORY } from "../lib/taskCategories";
-
-// Dictée vocale (26/08/2026, demande de Sybille : pouvoir dicter une tâche
-// plutôt que de la taper) — s'appuie sur l'API Web Speech du navigateur
-// (SpeechRecognition/webkitSpeechRecognition), déjà intégrée à Chrome/Edge :
-// pas de service tiers, pas de clé API, pas de coût — cohérent avec le
-// reste de l'appli (100% client-side). Pas disponible partout (Firefox ne
-// la supporte pas, support partiel sur Safari/iOS) : le bouton micro
-// n'apparaît donc que si le navigateur utilisé le supporte, sans message
-// d'erreur sinon — juste absent.
-const SpeechRecognitionCtor =
-  typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
-
-// Petit bouton réutilisé pour le titre ET les notes — un seul à la fois
-// peut être en train d'écouter (géré par `listeningField` dans le
-// formulaire), pour éviter deux dictées simultanées qui se marcheraient
-// dessus.
-function DictateButton({ active, onClick }) {
-  if (!SpeechRecognitionCtor) return null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1 text-xs rounded-full px-2 py-0.5 transition ${
-        active ? "bg-red-500/15 text-red-400" : "text-slate-400 hover:text-sky-300"
-      }`}
-    >
-      {active ? <Square size={11} /> : <Mic size={11} />}
-      {active ? "Arrêter" : "Dicter"}
-    </button>
-  );
-}
+import { useDictation } from "../lib/useDictation";
+import DictateButton from "./DictateButton";
 
 export default function TaskForm({ initial, existingSubcategories, onSubmit, onClose }) {
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -42,41 +13,9 @@ export default function TaskForm({ initial, existingSubcategories, onSubmit, onC
   const [note, setNote] = useState(initial?.note ?? "");
   const [busy, setBusy] = useState(false);
 
-  const [listeningField, setListeningField] = useState(null); // "title" | "note" | null
-  const recognitionRef = useRef(null);
-
-  // Coupe le micro si le formulaire se ferme pendant une dictée en cours.
-  useEffect(() => {
-    return () => recognitionRef.current?.stop();
-  }, []);
-
-  // Démarre (ou arrête, si on reclique dessus) la dictée pour un champ
-  // donné. `currentValue` est repris tel quel devant le texte dicté, pour
-  // pouvoir compléter un titre/une note déjà commencé(e) à la main plutôt
-  // que de l'écraser.
-  const dictateInto = (field, setValue, currentValue) => {
-    if (!SpeechRecognitionCtor) return;
-    if (listeningField === field) {
-      recognitionRef.current?.stop();
-      return;
-    }
-    recognitionRef.current?.stop();
-    const recognition = new SpeechRecognitionCtor();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = true;
-    recognition.continuous = false;
-    const base = currentValue ? `${currentValue} ` : "";
-    recognition.onresult = (e) => {
-      let transcript = "";
-      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
-      setValue(base + transcript);
-    };
-    recognition.onend = () => setListeningField((f) => (f === field ? null : f));
-    recognition.onerror = () => setListeningField((f) => (f === field ? null : f));
-    recognitionRef.current = recognition;
-    setListeningField(field);
-    recognition.start();
-  };
+  // Dictée vocale (26/08/2026) — logique partagée dans src/lib/useDictation.js
+  // (extraite le 31/08/2026 pour être réutilisée aussi par ChoreForm.jsx).
+  const { listeningField, dictateInto } = useDictation();
 
   // Suggestions de sous-catégorie propres à perso/pro : la liste de départ
   // (taskCategories.js) complétée par celles déjà utilisées sur d'autres

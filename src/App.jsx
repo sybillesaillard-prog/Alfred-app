@@ -11,6 +11,7 @@ import VariableCharges from "./pages/VariableCharges";
 import GmailInvoices from "./pages/GmailInvoices";
 import MailTasks from "./pages/MailTasks";
 import Chores from "./pages/Chores";
+import Reminders from "./pages/Reminders";
 
 function LoadingScreen() {
   return (
@@ -37,6 +38,7 @@ function AuthGate() {
         <Route path="/boite-mail" element={<GmailInvoices />} />
         <Route path="/taches-mail" element={<MailTasks />} />
         <Route path="/entretien" element={<Chores />} />
+        <Route path="/pense-bete" element={<Reminders />} />
       </Route>
       <Route path="*" element={<Navigate to="/depenses" replace />} />
     </Routes>

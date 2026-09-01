@@ -27,6 +27,19 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Barre de nav mobile défilante (31/08/2026) : la liste d'onglets a
+   grandi (Entretien, puis Pense-bête) au point de ne plus tenir sur un
+   écran de téléphone sans se tasser — passée en défilement horizontal côté
+   Layout.jsx, avec la barre de défilement elle-même masquée ici pour
+   garder un rendu propre (le défilement au doigt reste possible). */
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* anciens Edge/IE */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Edge modernes */
+}
+
 /* Hide number input spinners for cleaner amount fields */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {

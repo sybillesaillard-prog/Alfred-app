@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Wallet, CalendarClock, TrendingUp, ListTodo, Mail, Sparkles, Sprout, LogOut } from "lucide-react";
+import { Wallet, CalendarClock, TrendingUp, ListTodo, Mail, Sparkles, Sprout, Lightbulb, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { to: "/boite-mail", label: "Import depuis Gmail", icon: Mail },
   { to: "/taches-mail", label: "Tâches (mails)", icon: Sparkles },
   { to: "/entretien", label: "Entretien", icon: Sprout },
+  { to: "/pense-bete", label: "Pense-bête", icon: Lightbulb },
 ];
 
 export default function Layout() {
@@ -81,20 +82,21 @@ export default function Layout() {
         </div>
       </main>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 flex border-t border-slate-800 bg-slate-950/95 backdrop-blur safe-bottom">
+      {/* Mobile bottom nav — défilement horizontal (la liste d'onglets ne tient
+          plus sur un écran de téléphone sans se tasser) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 flex overflow-x-auto no-scrollbar border-t border-slate-800 bg-slate-950/95 backdrop-blur safe-bottom">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `flex-1 flex flex-col items-center gap-1 py-2.5 text-xs transition ${
+              `shrink-0 flex flex-col items-center gap-1 px-4 py-2.5 text-xs transition ${
                 isActive ? "text-sky-300" : "text-slate-500"
               }`
             }
           >
             <Icon size={22} />
-            {label}
+            <span className="whitespace-nowrap">{label}</span>
           </NavLink>
         ))}
       </nav>

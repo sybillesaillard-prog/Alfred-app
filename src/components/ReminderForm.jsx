@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { X, Image as ImageIcon, Trash2 } from "lucide-react";
+import { X, Image as ImageIcon, Trash2, Plus, Link as LinkIcon } from "lucide-react";
 import { useDictation } from "../lib/useDictation";
 import DictateButton from "./DictateButton";
 import { compressImageToDataUrl } from "../lib/imageCompression";
@@ -13,11 +13,25 @@ import { compressImageToDataUrl } from "../lib/imageCompression";
 // catégorie est un texte libre saisi par l'utilisatrice, avec juste une
 // autocomplétion sur celles déjà utilisées — la liste de rubriques doit
 // pouvoir grandir sans toucher au code.
+//
+// (01/09/2026) Liens et photos passés de "un seul" à "plusieurs" — demande
+// de Sybille. Pour les entrées créées avant ce changement (champs uniques
+// `link`/`photoDataUrl`), on les récupère comme premier élément des
+// tableaux `links`/`photoDataUrls` ; les anciens champs sont remis à null
+// à l'enregistrement pour ne pas laisser deux représentations en parallèle.
 export default function ReminderForm({ initial, existingCategories, onSubmit, onClose }) {
   const [category, setCategory] = useState(initial?.category ?? "");
   const [text, setText] = useState(initial?.text ?? "");
-  const [link, setLink] = useState(initial?.link ?? "");
-  const [photoDataUrl, setPhotoDataUrl] = useState(initial?.photoDataUrl ?? null);
+  const [links, setLinks] = useState(
+    initial?.links?.length ? initial.links : initial?.link ? [initial.link] : []
+  );
+  const [photos, setPhotos] = useState(
+    initial?.photoDataUrls?.length
+      ? initial.photoDataUrls
+      : initial?.photoDataUrl
+      ? [initial.photoDataUrl]
+      : []
+  );
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const [error, setError] = useState("");
@@ -26,34 +40,41 @@ export default function ReminderForm({ initial, existingCategories, onSubmit, on
 
   const { listeningField, dictateInto } = useDictation();
 
-  const onPickPhoto = async (e) => {
-    const file = e.target.files?.[0];
+  const addLink = () => setLinks((prev) => [...prev, ""]);
+  const updateLink = (i, value) =>
+    setLinks((prev) => prev.map((l, idx) => (idx === i ? value : l)));
+  const removeLink = (i) => setLinks((prev) => prev.filter((_, idx) => idx !== i));
+
+  const onPickPhotos = async (e) => {
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (!file) return;
+    if (!files.length) return;
     setPhotoError("");
     setPhotoBusy(true);
     try {
-      const dataUrl = await compressImageToDataUrl(file);
-      setPhotoDataUrl(dataUrl);
+      const dataUrls = await Promise.all(files.map((f) => compressImageToDataUrl(f)));
+      setPhotos((prev) => [...prev, ...dataUrls]);
     } catch (err) {
       console.error(err);
-      setPhotoError("Impossible de traiter cette image.");
+      setPhotoError("Impossible de traiter une des images.");
     } finally {
       setPhotoBusy(false);
     }
   };
+
+  const removePhoto = (i) => setPhotos((prev) => prev.filter((_, idx) => idx !== i));
 
   const submit = async (e) => {
     e.preventDefault();
     setError("");
     const cat = category.trim();
     const txt = text.trim();
-    const lnk = link.trim();
+    const cleanLinks = links.map((l) => l.trim()).filter(Boolean);
     if (!cat) {
       setError("Choisis une rubrique.");
       return;
     }
-    if (!txt && !lnk && !photoDataUrl) {
+    if (!txt && !cleanLinks.length && !photos.length) {
       setError("Ajoute au moins un texte, un lien ou une photo.");
       return;
     }
@@ -62,8 +83,12 @@ export default function ReminderForm({ initial, existingCategories, onSubmit, on
       await onSubmit({
         category: cat,
         text: txt || null,
-        link: lnk || null,
-        photoDataUrl: photoDataUrl || null,
+        links: cleanLinks,
+        photoDataUrls: photos,
+        // Anciens champs (un seul lien / une seule photo) : remis à null pour
+        // ne garder qu'une seule représentation (les tableaux ci-dessus).
+        link: null,
+        photoDataUrl: null,
       });
       onClose();
     } finally {
@@ -121,50 +146,77 @@ export default function ReminderForm({ initial, existingCategories, onSubmit, on
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1">Lien (optionnel)</label>
-          <input
-            type="url"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder="https://..."
-            className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
-          />
+          <label className="block text-sm text-slate-400 mb-1">Liens (optionnel)</label>
+          <div className="space-y-2">
+            {links.map((l, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="url"
+                  value={l}
+                  onChange={(e) => updateLink(i, e.target.value)}
+                  placeholder="https://..."
+                  className="flex-1 min-w-0 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeLink(i)}
+                  className="text-slate-500 hover:text-red-400 p-1.5 shrink-0"
+                  aria-label="Retirer ce lien"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={addLink}
+            className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-sky-300 transition mt-2"
+          >
+            <Plus size={15} />
+            <LinkIcon size={13} />
+            Ajouter un lien
+          </button>
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1">Photo (optionnel)</label>
-          {photoDataUrl ? (
-            <div className="relative inline-block">
-              <img
-                src={photoDataUrl}
-                alt=""
-                className="h-28 w-28 object-cover rounded-lg border border-slate-700"
-              />
-              <button
-                type="button"
-                onClick={() => setPhotoDataUrl(null)}
-                className="absolute -top-2 -right-2 bg-slate-800 border border-slate-700 rounded-full p-1 text-slate-300 hover:text-red-400"
-                aria-label="Retirer la photo"
-              >
-                <Trash2 size={13} />
-              </button>
+          <label className="block text-sm text-slate-400 mb-1">Photos (optionnel)</label>
+          {photos.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {photos.map((p, i) => (
+                <div key={i} className="relative">
+                  <img
+                    src={p}
+                    alt=""
+                    className="h-24 w-24 object-cover rounded-lg border border-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    className="absolute -top-2 -right-2 bg-slate-800 border border-slate-700 rounded-full p-1 text-slate-300 hover:text-red-400"
+                    aria-label="Retirer cette photo"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={photoBusy}
-              className="flex items-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-sm text-slate-400 hover:border-sky-400 hover:text-sky-300 transition disabled:opacity-60"
-            >
-              <ImageIcon size={16} />
-              {photoBusy ? "Traitement…" : "Ajouter une photo"}
-            </button>
           )}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={photoBusy}
+            className="flex items-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-sm text-slate-400 hover:border-sky-400 hover:text-sky-300 transition disabled:opacity-60"
+          >
+            <ImageIcon size={16} />
+            {photoBusy ? "Traitement…" : "Ajouter des photos"}
+          </button>
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            onChange={onPickPhoto}
+            multiple
+            onChange={onPickPhotos}
             className="hidden"
           />
           {photoError && <p className="text-xs text-red-400 mt-1">{photoError}</p>}

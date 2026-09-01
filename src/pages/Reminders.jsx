@@ -5,17 +5,32 @@ import ReminderForm from "../components/ReminderForm";
 
 // Pense-bête (31/08/2026, demande de Sybille) : un espace fourre-tout pour
 // noter des idées en vrac, rangées par rubrique libre (ex. "Films à voir",
-// "Séries à voir", "Achat potentiel") — chaque entrée pouvant contenir un
-// lien, une photo et/ou du texte. Contrairement à MailTasks.jsx (perso/pro
-// fixes), les rubriques sont entièrement définies par l'utilisatrice au fil
-// de la saisie (autocomplétion dans ReminderForm), donc le regroupement en
-// sections ci-dessous est calculé dynamiquement à partir des données.
+// "Séries à voir", "Achat potentiel") — chaque entrée pouvant contenir un ou
+// plusieurs liens, une ou plusieurs photos et/ou du texte (plusieurs liens
+// et plusieurs photos ajoutés le 01/09/2026). Contrairement à MailTasks.jsx
+// (perso/pro fixes), les rubriques sont entièrement définies par
+// l'utilisatrice au fil de la saisie (autocomplétion dans ReminderForm),
+// donc le regroupement en sections ci-dessous est calculé dynamiquement à
+// partir des données.
 function hostnameOf(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
     return url;
   }
+}
+
+// Compat entrées créées avant le passage à plusieurs liens/photos (champs
+// uniques `link`/`photoDataUrl`) : on les traite comme un tableau à 1 élément.
+function linksOf(it) {
+  if (it.links?.length) return it.links;
+  if (it.link) return [it.link];
+  return [];
+}
+function photosOf(it) {
+  if (it.photoDataUrls?.length) return it.photoDataUrls;
+  if (it.photoDataUrl) return [it.photoDataUrl];
+  return [];
 }
 
 export default function Reminders() {
@@ -110,40 +125,59 @@ export default function Reminders() {
             <div key={category}>
               <h2 className="text-sm font-medium text-slate-300 mb-2">{category}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {entries.map((it) => (
-                  <div
-                    key={it.id}
-                    className="bg-slate-900 border border-slate-800 rounded-xl p-3 group flex flex-col gap-2"
-                  >
-                    {it.photoDataUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setLightbox(it.photoDataUrl)}
-                        className="block"
-                      >
-                        <img
-                          src={it.photoDataUrl}
-                          alt=""
-                          className="w-full h-32 object-cover rounded-lg border border-slate-800"
-                        />
-                      </button>
-                    )}
-                    {it.text && <p className="text-sm text-slate-100 whitespace-pre-wrap">{it.text}</p>}
-                    <div className="flex items-center justify-between gap-2 mt-auto">
-                      {it.link ? (
-                        <a
-                          href={it.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 truncate"
-                        >
-                          <LinkIcon size={12} className="shrink-0" />
-                          <span className="truncate">{hostnameOf(it.link)}</span>
-                        </a>
-                      ) : (
-                        <span />
+                {entries.map((it) => {
+                  const photos = photosOf(it);
+                  const links = linksOf(it);
+                  return (
+                    <div
+                      key={it.id}
+                      className="bg-slate-900 border border-slate-800 rounded-xl p-3 group flex flex-col gap-2"
+                    >
+                      {photos.length === 1 && (
+                        <button type="button" onClick={() => setLightbox(photos[0])} className="block">
+                          <img
+                            src={photos[0]}
+                            alt=""
+                            className="w-full h-32 object-cover rounded-lg border border-slate-800"
+                          />
+                        </button>
                       )}
-                      <div className="flex items-center gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 transition">
+                      {photos.length > 1 && (
+                        <div className="grid grid-cols-3 gap-1">
+                          {photos.map((p, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => setLightbox(p)}
+                              className="block"
+                            >
+                              <img
+                                src={p}
+                                alt=""
+                                className="w-full h-16 object-cover rounded-lg border border-slate-800"
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {it.text && <p className="text-sm text-slate-100 whitespace-pre-wrap">{it.text}</p>}
+                      {links.length > 0 && (
+                        <div className="flex flex-col gap-1">
+                          {links.map((lnk, i) => (
+                            <a
+                              key={i}
+                              href={lnk}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 truncate"
+                            >
+                              <LinkIcon size={12} className="shrink-0" />
+                              <span className="truncate">{hostnameOf(lnk)}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-end gap-1 mt-auto md:opacity-0 md:group-hover:opacity-100 transition">
                         <button
                           onClick={() => onEdit(it)}
                           className="text-xs text-slate-500 hover:text-slate-200 px-1.5 py-1"
@@ -158,8 +192,8 @@ export default function Reminders() {
                         </button>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

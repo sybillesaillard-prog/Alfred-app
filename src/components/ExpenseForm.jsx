@@ -332,7 +332,7 @@ export default function ExpenseForm({
         pdfBlob = await fileToPdfBlob(file);
         if (driveConnected) {
           try {
-            const uploaded = await uploadReceiptToDrive(pdfBlob, filename);
+            const uploaded = await uploadReceiptToDrive(pdfBlob, filename, date);
             driveFileId = uploaded.id;
             driveViewUrl = uploaded.webViewLink;
           } catch (err) {

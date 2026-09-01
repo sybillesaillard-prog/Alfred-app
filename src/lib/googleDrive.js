@@ -45,7 +45,25 @@ function storeToken(token, expiresInSeconds) {
 
 let accessToken = loadStoredToken();
 let tokenClient = null;
-let folderIdCache = null;
+let rootFolderIdCache = null;
+// Cache des sous-dossiers "année/mois" déjà résolus cette session, pour ne
+// pas refaire un aller-retour Drive à chaque envoi (clé "2026-08").
+const yearMonthFolderIdCache = new Map();
+
+const FRENCH_MONTHS = [
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
+  "Octobre",
+  "Novembre",
+  "Décembre",
+];
 
 function waitForGis() {
   return new Promise((resolve, reject) => {
@@ -110,8 +128,8 @@ export function connectDrive() {
   return tokenClientReady.then(() => connectDrive());
 }
 
-async function getFolderId() {
-  if (folderIdCache) return folderIdCache;
+async function getRootFolderId() {
+  if (rootFolderIdCache) return rootFolderIdCache;
   const q = encodeURIComponent(
     `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
   );
@@ -120,8 +138,8 @@ async function getFolderId() {
   });
   const data = await res.json();
   if (data.files?.length > 0) {
-    folderIdCache = data.files[0].id;
-    return folderIdCache;
+    rootFolderIdCache = data.files[0].id;
+    return rootFolderIdCache;
   }
   const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
     method: "POST",
@@ -132,15 +150,67 @@ async function getFolderId() {
     body: JSON.stringify({ name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" }),
   });
   const created = await createRes.json();
-  folderIdCache = created.id;
-  return folderIdCache;
+  rootFolderIdCache = created.id;
+  return rootFolderIdCache;
+}
+
+// Cherche un sous-dossier `name` directement sous `parentId`, le crée s'il
+// n'existe pas encore.
+async function getOrCreateChildFolder(parentId, name) {
+  const q = encodeURIComponent(
+    `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
+  );
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json();
+  if (data.files?.length > 0) return data.files[0].id;
+
+  const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId],
+    }),
+  });
+  const created = await createRes.json();
+  return created.id;
+}
+
+// Classement par mois d'achat (01/09/2026, demande de Sybille) : range les
+// justificatifs dans "Alfred - Justificatifs/<année>/<NN- Mois>/" au lieu
+// d'un seul dossier plat — pour pouvoir ensuite les faire basculer vers le
+// bon dossier de l'arborescence locale (Cabinet ISRAEL/<année>/<NN- Mois>/
+// Fournisseurs/), classée par mois de la même façon.
+async function getYearMonthFolderId(dateISO) {
+  const cached = yearMonthFolderIdCache.get(dateISO.slice(0, 7));
+  if (cached) return cached;
+
+  const [year, month] = dateISO.split("-");
+  const rootId = await getRootFolderId();
+  const yearId = await getOrCreateChildFolder(rootId, year);
+  const monthName = FRENCH_MONTHS[Number(month) - 1] || month;
+  const monthFolderName = `${month}- ${monthName}`;
+  const monthId = await getOrCreateChildFolder(yearId, monthFolderName);
+
+  yearMonthFolderIdCache.set(dateISO.slice(0, 7), monthId);
+  return monthId;
 }
 
 // Envoie le fichier (blob PDF/image) vers le dossier "Alfred - Justificatifs"
-// du Drive de l'utilisatrice, sous le nom déjà calculé par buildFilename().
-export async function uploadReceiptToDrive(blob, filename) {
+// du Drive de l'utilisatrice, classé par année/mois d'achat (`dateISO`,
+// format "AAAA-MM-JJ"), sous le nom déjà calculé par buildFilename(). Si
+// `dateISO` est absent (ne devrait pas arriver, la date est un champ requis
+// du formulaire), on retombe sur le dossier racine pour ne jamais bloquer
+// l'envoi.
+export async function uploadReceiptToDrive(blob, filename, dateISO) {
   if (!accessToken) throw new Error("Google Drive n'est pas connecté.");
-  const folderId = await getFolderId();
+  const folderId = dateISO ? await getYearMonthFolderId(dateISO) : await getRootFolderId();
 
   const metadata = { name: filename, parents: [folderId] };
   const form = new FormData();

@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Plus, Trash2, ChevronLeft, ChevronRight, FileText, Camera, FileDown } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, FileText, Camera, FileDown, ArrowRightLeft } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { useCollection } from "../lib/useCollection";
 import { categoryInfo } from "../lib/expenseCategories";
 import { matchTransactions } from "../lib/bankTx";
 import { generateMatchedExpensesPdf, generateMissingTransactionsPdf, downloadBlob } from "../lib/pdf";
+import { buildBasculeClaudeDesktopLink } from "../lib/driveTransferLink";
 import ExpenseForm from "../components/ExpenseForm";
 import QuarterlyVat from "../components/QuarterlyVat";
 import BankReconciliation from "../components/BankReconciliation";
@@ -319,6 +320,27 @@ export default function Expenses() {
           </div>
         </div>
       )}
+
+      {/* Bascule des justificatifs Drive -> PC (01/09) : automatique chaque
+          dimanche soir via une tâche programmée ; ce bouton sert au
+          déclenchement manuel (07/09). Le transfert lui-même est fait par
+          Claude (Drive + accès au PC), pas par l'app — voir driveTransferLink.js. */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-4">
+        <h2 className="text-base font-semibold mb-1">Justificatifs sur le Drive</h2>
+        <p className="text-slate-400 text-sm mb-4">
+          Basculés automatiquement vers ton PC chaque dimanche soir (dossier "Fournisseurs" du mois). Pour le faire tout de suite :
+        </p>
+        <a
+          href={buildBasculeClaudeDesktopLink()}
+          className="flex items-center justify-center gap-2 rounded-lg border border-sky-400/30 bg-sky-400/10 text-sky-300 px-3 py-2.5 text-sm font-medium hover:bg-sky-400/20 transition"
+        >
+          <ArrowRightLeft size={16} />
+          Basculer vers mon PC maintenant
+        </a>
+        <p className="text-slate-500 text-xs mt-2">
+          Ouvre l'app Claude avec la demande déjà écrite — il ne reste qu'à cliquer Envoyer. Ton PC doit être allumé avec l'app Claude ouverte pour que ça fonctionne.
+        </p>
+      </div>
 
       <BankReconciliation
         items={items}

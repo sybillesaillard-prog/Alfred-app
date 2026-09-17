@@ -68,3 +68,20 @@ export function quarterLabel(key) {
   const [y, q] = key.split("-T");
   return `T${q} ${y} (${QUARTER_MONTHS_LABEL[q]})`;
 }
+
+// Plage de dates (bornes incluses, format ISO "AAAA-MM-JJ") couverte par un
+// trimestre civil — utilisé par la page Pointage (18/09) pour filtrer les
+// opérations bancaires et les dépenses du trimestre sélectionné.
+export function quarterRange(key) {
+  const [yStr, qStr] = key.split("-T");
+  const year = Number(yStr);
+  const q = Number(qStr);
+  const startMonth = (q - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const pad = (n) => String(n).padStart(2, "0");
+  const lastDay = new Date(year, endMonth, 0).getDate();
+  return {
+    start: `${year}-${pad(startMonth)}-01`,
+    end: `${year}-${pad(endMonth)}-${pad(lastDay)}`,
+  };
+}

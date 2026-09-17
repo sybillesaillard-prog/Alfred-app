@@ -55,7 +55,7 @@ export function dedupeTransactions(statements) {
 // quand la somme du groupe correspond au montant réellement débité.
 export function matchTransactions(transactions, expenses) {
   const exp = expenses.map((e) => ({ ...e, matched: false, ttcResolved: e.ttc ?? e.amount ?? 0 }));
-  const txs = transactions.map((t) => ({ ...t, matched: false }));
+  const txs = transactions.map((t) => ({ ...t, matched: false, matchedExpenses: [] }));
 
   const splitGroups = new Map();
   for (const e of exp) {
@@ -74,6 +74,11 @@ export function matchTransactions(transactions, expenses) {
     if (single) {
       single.matched = true;
       t.matched = true;
+      // Dépense(s) réellement à l'origine du rapprochement, gardée(s) ici en
+      // plus du simple booléen "matched" — utilisé depuis le 18/09 par la
+      // page Pointage pour aller vérifier, en plus de "la dépense existe
+      // dans Alfred", si son fichier (filename) est bien présent sur le PC.
+      t.matchedExpenses = [single];
       return;
     }
 
@@ -83,6 +88,7 @@ export function matchTransactions(transactions, expenses) {
       if (Math.abs(sum - amt) < 0.02) {
         group.forEach((e) => (e.matched = true));
         t.matched = true;
+        t.matchedExpenses = group;
         break;
       }
     }

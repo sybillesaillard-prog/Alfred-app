@@ -9,11 +9,20 @@
 // (date, fournisseur, montants, lien vers le fichier Drive si disponible) —
 // c'est Sybille qui choisit, pour chaque groupe, laquelle garder et lesquelles
 // supprimer.
-import { useMemo, useState } from "react";
+//
+// Les groupes écartés ("Ce n'est pas un doublon, écarter") sont mémorisés
+// dans Firestore (src/lib/duplicatesDismissed.js) plutôt que dans un simple
+// useState — corrigé le 18/09 : Sybille avait signalé que la page "n'enregistre
+// pas ce que j'ai écarté", un groupe écarté réapparaissait après un
+// rechargement de page ou un changement d'onglet, faute d'être mémorisé
+// ailleurs qu'en mémoire vive de la page.
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ExternalLink, FileText, Camera, Trash2 } from "lucide-react";
 import { useCollection } from "../lib/useCollection";
+import { useAuth } from "../context/AuthContext";
 import { categoryInfo } from "../lib/expenseCategories";
 import { findDuplicateExpenses } from "../lib/duplicates";
+import { getDismissedGroupKeys, setDismissedGroupKeys } from "../lib/duplicatesDismissed";
 
 const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 
@@ -23,8 +32,28 @@ const dateLabel = (d) =>
     : "Date inconnue";
 
 export default function Duplicates() {
+  const { user } = useAuth();
   const { items, loading, remove } = useCollection("expenses", "date");
   const [dismissed, setDismissed] = useState(() => new Set());
+  const [dismissedLoaded, setDismissedLoaded] = useState(false);
+
+  // Charge une seule fois, au montage, la liste des groupes déjà écartés par
+  // Sybille lors d'une session précédente (voir le commentaire en tête de
+  // fichier). Tant que ce chargement n'est pas terminé, on n'affiche rien
+  // (comme pour "loading" ci-dessous) pour éviter un flash où un groupe déjà
+  // écarté réapparaîtrait une fraction de seconde avant d'être re-masqué.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    getDismissedGroupKeys(user.uid).then((keys) => {
+      if (cancelled) return;
+      setDismissed(new Set(keys));
+      setDismissedLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const groups = useMemo(() => findDuplicateExpenses(items), [items]);
   const visibleGroups = useMemo(
@@ -37,7 +66,11 @@ export default function Duplicates() {
 
   const dismissGroup = (g) => {
     const key = g.items.map((e) => e.id).join("-");
-    setDismissed((prev) => new Set(prev).add(key));
+    setDismissed((prev) => {
+      const next = new Set(prev).add(key);
+      if (user) setDismissedGroupKeys(user.uid, [...next]);
+      return next;
+    });
   };
 
   const handleDelete = (expense) => {
@@ -61,7 +94,7 @@ export default function Duplicates() {
         </p>
       </div>
 
-      {loading ? (
+      {loading || !dismissedLoaded ? (
         <p className="text-slate-500 text-sm text-center py-8">Chargement…</p>
       ) : visibleGroups.length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">

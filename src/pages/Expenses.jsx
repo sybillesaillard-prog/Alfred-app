@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Trash2, ChevronLeft, ChevronRight, FileText, Camera, FileDown, ArrowRightLeft } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, FileText, Camera, FileDown, ArrowRightLeft, Link2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { useCollection } from "../lib/useCollection";
 import { categoryInfo } from "../lib/expenseCategories";
@@ -270,6 +270,13 @@ export default function Expenses() {
                           {cat.label}
                         </p>
                       </div>
+                      {e.splitGroupId && (
+                        <Link2
+                          size={14}
+                          className="text-sky-400 shrink-0"
+                          title="Fait partie d'un débit ventilé sur plusieurs factures"
+                        />
+                      )}
                       <span className="text-sm font-medium text-slate-100">
                         {eur.format(e.ttc ?? e.amount ?? 0)}
                       </span>

@@ -45,17 +45,46 @@ export function dedupeTransactions(statements) {
 // mensuels (MonthlyReconciliationSummary, exports PDF) pour qu'ils
 // s'accordent toujours sur ce qui est "rapproché" ou non. Ne mute pas les
 // tableaux reçus en argument.
+//
+// Ventilation d'un débit sur 2 factures (18/09, demande de Sybille) : deux
+// dépenses créées ensemble depuis "Ventiler ce débit sur 2 factures"
+// (ExpenseForm.jsx) partagent le même `splitGroupId` — elles représentent à
+// elles deux UN SEUL débit bancaire, chacune ne correspondant à aucun débit
+// à elle seule. Elles ne sont donc jamais candidates au rapprochement simple
+// (une dépense = une opération) ; elles ne sont reconnues que groupées,
+// quand la somme du groupe correspond au montant réellement débité.
 export function matchTransactions(transactions, expenses) {
   const exp = expenses.map((e) => ({ ...e, matched: false, ttcResolved: e.ttc ?? e.amount ?? 0 }));
   const txs = transactions.map((t) => ({ ...t, matched: false }));
 
+  const splitGroups = new Map();
+  for (const e of exp) {
+    if (!e.splitGroupId) continue;
+    if (!splitGroups.has(e.splitGroupId)) splitGroups.set(e.splitGroupId, []);
+    splitGroups.get(e.splitGroupId).push(e);
+  }
+
   txs.forEach((t) => {
     if (t.amount >= 0) return;
     const amt = Math.abs(t.amount);
-    const candidate = exp.find((e) => !e.matched && Math.abs(e.ttcResolved - amt) < 0.02);
-    if (candidate) {
-      candidate.matched = true;
+
+    const single = exp.find(
+      (e) => !e.matched && !e.splitGroupId && Math.abs(e.ttcResolved - amt) < 0.02
+    );
+    if (single) {
+      single.matched = true;
       t.matched = true;
+      return;
+    }
+
+    for (const group of splitGroups.values()) {
+      if (group.some((e) => e.matched)) continue;
+      const sum = group.reduce((s, e) => s + e.ttcResolved, 0);
+      if (Math.abs(sum - amt) < 0.02) {
+        group.forEach((e) => (e.matched = true));
+        t.matched = true;
+        break;
+      }
     }
   });
 

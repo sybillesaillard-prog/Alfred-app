@@ -87,7 +87,29 @@ export default function ExpenseForm({
   const [file, setFile] = useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [savedDownload, setSavedDownload] = useState(null); // { blob, filename, driveLink }
+  const [savedDownload, setSavedDownload] = useState(null); // [{ blob, filename, driveViewUrl }, ...]
+
+  // Ventilation d'un débit sur 2 factures (18/09, demande de Sybille :
+  // "ajoute la possibilité de ventiler un débit avec 2 factures") — pour un
+  // paiement bancaire unique qui correspond en réalité à deux factures
+  // distinctes (fournisseurs/catégories/taux de TVA potentiellement
+  // différents). Uniquement proposé à la création (jamais en édition) : les
+  // deux factures deviennent deux dépenses Firestore séparées, liées par un
+  // même `splitGroupId` pour que le rapprochement bancaire (bankTx.js) les
+  // reconnaisse comme UN SEUL débit une fois les deux montants additionnés,
+  // au lieu de chercher (en vain) une dépense seule au montant du débit.
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  const [fournisseur2, setFournisseur2] = useState("");
+  const [date2, setDate2] = useState(f0.date);
+  const [category2, setCategory2] = useState(EXPENSE_CATEGORIES[0].id);
+  const [rateSel2, setRateSel2] = useState(0.2);
+  const [customRate2, setCustomRate2] = useState("");
+  const [ht2, setHt2] = useState("");
+  const [tva2, setTva2] = useState("");
+  const [ttc2, setTtc2] = useState("");
+  const [note2, setNote2] = useState("");
+  const [file2, setFile2] = useState(null);
+  const [filePreviewUrl2, setFilePreviewUrl2] = useState(null);
   const [ocrStatus, setOcrStatus] = useState("");
   const [ocrFound, setOcrFound] = useState(false);
   const [driveConnected, setDriveConnected] = useState(isDriveConnected());
@@ -145,6 +167,70 @@ export default function ExpenseForm({
     const { tva: t, ttc: tt } = computeFromHT(parsed, rate);
     setTva(t ? String(t) : "");
     setTtc(tt ? String(tt) : "");
+  };
+
+  // Sous-traitance : taux de TVA par défaut à 0 % (18/09), appliqué au choix
+  // de la catégorie — reste modifiable ensuite via le sélecteur de taux si
+  // une facture donnée précise a un taux différent.
+  const onCategoryChange = (id) => {
+    setCategory(id);
+    if (id === "soustraitance") onRateChange(0);
+  };
+
+  // --- Facture 2 (ventilation d'un débit sur 2 factures) — mêmes calculs
+  // HT/TVA/TTC que la facture 1, sur des champs séparés. Pas de lecture
+  // automatique (OCR/PDF) ni de scanner réseau pour cette 2e facture, pour
+  // garder le formulaire simple : les montants se saisissent à la main.
+  const effectiveRate2 = () => {
+    if (rateSel2 === "custom") return (parseFloat(customRate2) || 0) / 100;
+    return parseFloat(rateSel2) || 0;
+  };
+  const onHt2Change = (v) => {
+    setHt2(v);
+    const parsed = parseFloat(String(v).replace(",", ".")) || 0;
+    const { tva: t, ttc: tt } = computeFromHT(parsed, effectiveRate2());
+    setTva2(t ? String(t) : "");
+    setTtc2(tt ? String(tt) : "");
+  };
+  const onTva2Change = (v) => {
+    setTva2(v);
+    const parsedHt = parseFloat(String(ht2).replace(",", ".")) || 0;
+    const parsedTva = parseFloat(String(v).replace(",", ".")) || 0;
+    const { ttc: tt } = computeFromTVA(parsedHt, parsedTva);
+    setTtc2(tt ? String(tt) : "");
+  };
+  const onTtc2Change = (v) => {
+    setTtc2(v);
+    const parsed = parseFloat(String(v).replace(",", ".")) || 0;
+    const { ht: h, tva: t } = computeFromTTC(parsed, effectiveRate2());
+    setHt2(h ? String(h) : "");
+    setTva2(t ? String(t) : "");
+  };
+  const onRate2Change = (v) => {
+    setRateSel2(v);
+    const parsed = parseFloat(String(ht2).replace(",", ".")) || 0;
+    const rate = v === "custom" ? (parseFloat(customRate2) || 0) / 100 : parseFloat(v) || 0;
+    const { tva: t, ttc: tt } = computeFromHT(parsed, rate);
+    setTva2(t ? String(t) : "");
+    setTtc2(tt ? String(tt) : "");
+  };
+  const onCustomRate2Change = (v) => {
+    setCustomRate2(v);
+    const parsed = parseFloat(String(ht2).replace(",", ".")) || 0;
+    const rate = (parseFloat(v) || 0) / 100;
+    const { tva: t, ttc: tt } = computeFromHT(parsed, rate);
+    setTva2(t ? String(t) : "");
+    setTtc2(tt ? String(tt) : "");
+  };
+  const onCategory2Change = (id) => {
+    setCategory2(id);
+    if (id === "soustraitance") onRate2Change(0);
+  };
+  const onFile2Change = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile2(f);
+    setFilePreviewUrl2(f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
   };
 
   // Applique les champs détectés (par OCR image ou lecture directe de PDF)
@@ -311,6 +397,29 @@ export default function ExpenseForm({
   const filenamePreview = file
     ? buildFilename(fournisseur, parseFloat(String(ttc).replace(",", ".")) || 0, existingFilenames)
     : null;
+  const filenamePreview2 = file2
+    ? buildFilename(fournisseur2, parseFloat(String(ttc2).replace(",", ".")) || 0, existingFilenames)
+    : null;
+
+  // Convertit un fichier en PDF puis l'envoie sur Drive si connecté — logique
+  // partagée entre la facture 1 (toujours) et la facture 2 (seulement si
+  // "Ventiler ce débit sur 2 factures" est actif et qu'un fichier y est joint).
+  const buildAndUpload = async (f, filename, dateVal) => {
+    if (!f) return { pdfBlob: null, driveFileId: null, driveViewUrl: null };
+    const pdfBlob = await fileToPdfBlob(f);
+    let driveFileId = null;
+    let driveViewUrl = null;
+    if (driveConnected) {
+      try {
+        const uploaded = await uploadReceiptToDrive(pdfBlob, filename, dateVal);
+        driveFileId = uploaded.id;
+        driveViewUrl = uploaded.webViewLink;
+      } catch (err) {
+        setDriveError("L'envoi vers Drive a échoué — le fichier reste à télécharger manuellement.");
+      }
+    }
+    return { pdfBlob, driveFileId, driveViewUrl };
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -319,46 +428,79 @@ export default function ExpenseForm({
     const parsedTtc = parseFloat(String(ttc).replace(",", ".")) || 0;
     if (!parsedTtc || parsedTtc <= 0) return;
 
+    let parsedHt2 = 0;
+    let parsedTva2 = 0;
+    let parsedTtc2 = 0;
+    if (splitEnabled) {
+      parsedHt2 = parseFloat(String(ht2).replace(",", ".")) || 0;
+      parsedTva2 = parseFloat(String(tva2).replace(",", ".")) || 0;
+      parsedTtc2 = parseFloat(String(ttc2).replace(",", ".")) || 0;
+      if (!parsedTtc2 || parsedTtc2 <= 0) return;
+    }
+
     setBusy(true);
     try {
-      const filename = file ? filenamePreview : (initial?.filename ?? null);
-      const kind = file ? (file.type.startsWith("image/") ? "photo" : "pdf") : (initial?.kind ?? "manuel");
-      const rate = effectiveRate();
+      // Identifiant partagé par les deux factures d'un même débit ventilé —
+      // cf. matchTransactions dans bankTx.js, qui reconnaît le groupe complet
+      // dès que la somme des deux correspond au montant réellement débité.
+      const splitGroupId = splitEnabled
+        ? `split-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        : null;
 
-      let pdfBlob = null;
-      let driveFileId = null;
-      let driveViewUrl = null;
-      if (file) {
-        pdfBlob = await fileToPdfBlob(file);
-        if (driveConnected) {
-          try {
-            const uploaded = await uploadReceiptToDrive(pdfBlob, filename, date);
-            driveFileId = uploaded.id;
-            driveViewUrl = uploaded.webViewLink;
-          } catch (err) {
-            setDriveError("L'envoi vers Drive a échoué — le fichier reste à télécharger manuellement.");
-          }
-        }
-      }
+      const filename1 = file ? filenamePreview : (initial?.filename ?? null);
+      const kind1 = file ? (file.type.startsWith("image/") ? "photo" : "pdf") : (initial?.kind ?? "manuel");
+      const up1 = await buildAndUpload(file, filename1, date);
 
       await onSubmit({
         fournisseur: fournisseur.trim(),
         date,
         category,
-        vatRate: rate,
+        vatRate: effectiveRate(),
         ht: parsedHt,
         tva: parsedTva,
         ttc: parsedTtc,
         amount: parsedTtc, // compat avec l'ancien champ "amount"
         note: note.trim(),
-        filename,
-        kind,
-        driveFileId,
-        driveViewUrl,
+        filename: filename1,
+        kind: kind1,
+        driveFileId: up1.driveFileId,
+        driveViewUrl: up1.driveViewUrl,
+        ...(splitGroupId ? { splitGroupId } : {}),
       });
 
-      if (file) {
-        setSavedDownload({ blob: pdfBlob, filename, driveViewUrl });
+      let filename2 = null;
+      let up2 = null;
+      if (splitEnabled) {
+        filename2 = file2
+          ? buildFilename(fournisseur2, parsedTtc2, [...existingFilenames, filename1].filter(Boolean))
+          : null;
+        const kind2 = file2 ? (file2.type.startsWith("image/") ? "photo" : "pdf") : "manuel";
+        up2 = await buildAndUpload(file2, filename2, date2);
+
+        await onSubmit({
+          fournisseur: fournisseur2.trim(),
+          date: date2,
+          category: category2,
+          vatRate: effectiveRate2(),
+          ht: parsedHt2,
+          tva: parsedTva2,
+          ttc: parsedTtc2,
+          amount: parsedTtc2,
+          note: note2.trim(),
+          filename: filename2,
+          kind: kind2,
+          driveFileId: up2.driveFileId,
+          driveViewUrl: up2.driveViewUrl,
+          splitGroupId,
+        });
+      }
+
+      const downloads = [];
+      if (file) downloads.push({ blob: up1.pdfBlob, filename: filename1, driveViewUrl: up1.driveViewUrl });
+      if (splitEnabled && file2) downloads.push({ blob: up2.pdfBlob, filename: filename2, driveViewUrl: up2.driveViewUrl });
+
+      if (downloads.length > 0) {
+        setSavedDownload(downloads);
       } else {
         onClose();
       }
@@ -367,42 +509,52 @@ export default function ExpenseForm({
     }
   };
 
-  // Écran de confirmation après enregistrement d'un document : si Google
-  // Drive est connecté le fichier y est déjà sauvegardé, sinon (pas
+  // Écran de confirmation après enregistrement d'un ou deux documents (2 en
+  // cas de ventilation sur 2 factures, chacune avec son propre fichier) : si
+  // Google Drive est connecté le fichier y est déjà sauvegardé, sinon (pas
   // d'abonnement Firebase Storage actif) on propose de le télécharger tout
   // de suite sur cet appareil.
   if (savedDownload) {
     return (
       <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="w-full md:max-w-md bg-slate-900 border border-slate-800 rounded-t-2xl md:rounded-2xl p-5 space-y-4 safe-bottom">
-          <h2 className="text-lg font-semibold">Dépense enregistrée ✅</h2>
-          {savedDownload.driveViewUrl ? (
-            <p className="text-sm text-emerald-300">
-              Le fichier a été sauvegardé dans ton Google Drive (dossier "Alfred - Justificatifs").
-            </p>
-          ) : (
-            <p className="text-sm text-slate-400">
-              Le fichier n'est pas sauvegardé dans le cloud — télécharge-le sur cet appareil si tu veux le garder.
-            </p>
-          )}
-          {savedDownload.driveViewUrl && (
-            <a
-              href={savedDownload.driveViewUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-400/10 border border-emerald-400/30 text-emerald-300 font-medium py-2.5 hover:bg-emerald-400/20 transition"
-            >
-              <CloudCheck size={16} />
-              Ouvrir dans Google Drive
-            </a>
-          )}
-          <button
-            onClick={() => downloadBlob(savedDownload.blob, savedDownload.filename)}
-            className="w-full flex items-center justify-center gap-2 rounded-lg bg-sky-400 text-slate-950 font-medium py-2.5 hover:bg-sky-300 transition"
-          >
-            <Download size={16} />
-            Télécharger {savedDownload.filename}
-          </button>
+          <h2 className="text-lg font-semibold">
+            {savedDownload.length > 1 ? "Dépenses enregistrées ✅" : "Dépense enregistrée ✅"}
+          </h2>
+          {savedDownload.map((d, i) => (
+            <div key={i} className="space-y-2.5 border-t border-slate-800 first:border-0 first:pt-0 pt-3">
+              {savedDownload.length > 1 && (
+                <p className="text-xs text-slate-500 font-medium">Facture {i + 1}</p>
+              )}
+              {d.driveViewUrl ? (
+                <p className="text-sm text-emerald-300">
+                  Le fichier a été sauvegardé dans ton Google Drive (dossier "Alfred - Justificatifs").
+                </p>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  Le fichier n'est pas sauvegardé dans le cloud — télécharge-le sur cet appareil si tu veux le garder.
+                </p>
+              )}
+              {d.driveViewUrl && (
+                <a
+                  href={d.driveViewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-400/10 border border-emerald-400/30 text-emerald-300 font-medium py-2.5 hover:bg-emerald-400/20 transition"
+                >
+                  <CloudCheck size={16} />
+                  Ouvrir dans Google Drive
+                </a>
+              )}
+              <button
+                onClick={() => downloadBlob(d.blob, d.filename)}
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-sky-400 text-slate-950 font-medium py-2.5 hover:bg-sky-300 transition"
+              >
+                <Download size={16} />
+                Télécharger {d.filename}
+              </button>
+            </div>
+          ))}
           <button
             onClick={onClose}
             className="w-full rounded-lg border border-slate-700 text-slate-300 py-2.5 hover:bg-slate-800 transition"
@@ -595,7 +747,7 @@ export default function ExpenseForm({
             <label className="block text-sm text-slate-400 mb-1">Catégorie</label>
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => onCategoryChange(e.target.value)}
               className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
             >
               {EXPENSE_CATEGORIES.map((c) => (
@@ -701,6 +853,190 @@ export default function ExpenseForm({
             className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
           />
         </div>
+
+        {/* Ventilation d'un débit sur 2 factures (18/09) — seulement à la
+            création : deux paiements réunis dans un seul débit bancaire
+            deviennent ici deux dépenses distinctes, reliées pour que le
+            rapprochement bancaire les reconnaisse ensemble (bankTx.js). */}
+        {!initial && (
+          <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5">
+            <label className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={splitEnabled}
+                onChange={(e) => setSplitEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-400 focus:ring-sky-400 focus:ring-offset-0"
+              />
+              Ce débit correspond à 2 factures (les ventiler)
+            </label>
+            {!splitEnabled && (
+              <p className="text-xs text-slate-500 mt-1 ml-6">
+                Ex : un seul virement qui règle deux factures d'un coup — coche pour saisir la 2ᵉ facture.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!initial && splitEnabled && (
+          <div className="rounded-lg border border-sky-400/30 bg-sky-400/5 p-3.5 space-y-3.5">
+            <p className="text-sm font-medium text-sky-300">Facture 2</p>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Fournisseur</label>
+              <input
+                type="text"
+                value={fournisseur2}
+                onChange={(e) => setFournisseur2(e.target.value)}
+                placeholder="Ex : Amazon Business"
+                className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Catégorie</label>
+                <select
+                  value={category2}
+                  onChange={(e) => onCategory2Change(e.target.value)}
+                  className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+                >
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Date</label>
+                <input
+                  type="date"
+                  required={splitEnabled}
+                  value={date2}
+                  onChange={(e) => setDate2(e.target.value)}
+                  className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Taux de TVA</label>
+              <select
+                value={rateSel2}
+                onChange={(e) => onRate2Change(e.target.value)}
+                className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+              >
+                {VAT_RATES.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+                <option value="custom">Autre taux (achat à l'étranger…)</option>
+              </select>
+              {rateSel2 === "custom" && (
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={customRate2}
+                  onChange={(e) => onCustomRate2Change(e.target.value)}
+                  placeholder="Taux en %, ex : 19"
+                  className="w-full mt-2 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+                />
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">HT (€)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={ht2}
+                  onChange={(e) => onHt2Change(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">TVA (€)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={tva2}
+                  onChange={(e) => onTva2Change(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">TTC (€)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  required={splitEnabled}
+                  value={ttc2}
+                  onChange={(e) => onTtc2Change(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 font-semibold outline-none focus:border-sky-400"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Ticket ou facture (optionnel)
+              </label>
+              {!file2 ? (
+                <label className="cursor-pointer flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-800/70 transition px-3 py-2.5">
+                  <FileText size={18} className="text-slate-300 shrink-0" />
+                  <span className="text-sm text-slate-300">Importer PDF/image</span>
+                  <input type="file" accept="image/*,.pdf" className="hidden" onChange={onFile2Change} />
+                </label>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5">
+                  {filePreviewUrl2 ? (
+                    <img src={filePreviewUrl2} className="h-10 w-10 object-cover rounded" />
+                  ) : (
+                    <FileText size={20} className="text-slate-300" />
+                  )}
+                  <span className="text-sm text-slate-300 flex-1 truncate">{file2.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFile2(null);
+                      setFilePreviewUrl2(null);
+                    }}
+                    className="text-slate-500 hover:text-red-400 p-1"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+              <p className="text-xs text-slate-500 mt-1.5">
+                Pas de lecture automatique pour cette 2ᵉ facture — remplis les montants à la main.
+              </p>
+              {file2 && filenamePreview2 && (
+                <div className="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 mt-2">
+                  <p className="text-xs text-slate-500">Nom du fichier généré</p>
+                  <p className="text-sm text-sky-300 font-mono break-all">{filenamePreview2}</p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Note (optionnel)</label>
+              <input
+                type="text"
+                value={note2}
+                onChange={(e) => setNote2(e.target.value)}
+                placeholder="Ex : 2e facture du même paiement"
+                className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-slate-100 outline-none focus:border-sky-400"
+              />
+            </div>
+          </div>
+        )}
 
         <button
           type="submit"

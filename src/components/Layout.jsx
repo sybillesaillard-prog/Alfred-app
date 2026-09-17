@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Wallet, CalendarClock, TrendingUp, ListTodo, Mail, Sparkles, Sprout, Lightbulb, LogOut } from "lucide-react";
+import { Wallet, CopyX, CalendarClock, TrendingUp, ListTodo, Mail, Sparkles, Sprout, Lightbulb, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/depenses", label: "Dépenses", icon: Wallet },
+  { to: "/doublons", label: "Doublons", icon: CopyX },
   { to: "/charges-fixes", label: "Charges fixes", icon: CalendarClock },
   { to: "/charges-variables", label: "Charges variables", icon: TrendingUp },
   { to: "/taches", label: "Tâches", icon: ListTodo },

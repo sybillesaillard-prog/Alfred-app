@@ -12,6 +12,7 @@ import GmailInvoices from "./pages/GmailInvoices";
 import MailTasks from "./pages/MailTasks";
 import Chores from "./pages/Chores";
 import Reminders from "./pages/Reminders";
+import Duplicates from "./pages/Duplicates";
 
 function LoadingScreen() {
   return (
@@ -32,6 +33,7 @@ function AuthGate() {
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/depenses" replace />} />
         <Route path="/depenses" element={<Expenses />} />
+        <Route path="/doublons" element={<Duplicates />} />
         <Route path="/charges-fixes" element={<FixedCharges />} />
         <Route path="/charges-variables" element={<VariableCharges />} />
         <Route path="/taches" element={<Tasks />} />

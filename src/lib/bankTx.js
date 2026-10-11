@@ -96,3 +96,30 @@ export function matchTransactions(transactions, expenses) {
 
   return { transactions: txs, expenses: exp };
 }
+
+// Symétrique de matchTransactions, côté recettes (07/10, demande de Sybille
+// "suivi du chiffre d'affaires + résultat net") : rapproche les opérations
+// CRÉDITÉES (amount > 0, un virement/paiement reçu) avec les recettes
+// enregistrées (collection `revenues`), par montant TTC à 0,02€ près — même
+// tolérance et même logique "montant uniquement, pas de date" que côté
+// dépenses. Pas de notion de ventilation sur plusieurs factures ici (pas
+// demandée côté recettes) ; à ajouter plus tard sur le même principe que
+// `splitGroupId` si le besoin se présente.
+export function matchRevenueTransactions(transactions, revenues) {
+  const rev = revenues.map((r) => ({ ...r, matched: false, ttcResolved: r.ttc ?? r.amount ?? 0 }));
+  const txs = transactions.map((t) => ({ ...t, matched: false, matchedRevenues: [] }));
+
+  txs.forEach((t) => {
+    if (t.amount <= 0) return;
+    const amt = t.amount;
+
+    const single = rev.find((r) => !r.matched && Math.abs(r.ttcResolved - amt) < 0.02);
+    if (single) {
+      single.matched = true;
+      t.matched = true;
+      t.matchedRevenues = [single];
+    }
+  });
+
+  return { transactions: txs, revenues: rev };
+}

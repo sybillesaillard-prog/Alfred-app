@@ -5,6 +5,8 @@ import SetupNeeded from "./pages/SetupNeeded";
 import Login from "./pages/Login";
 import Layout from "./components/Layout";
 import Expenses from "./pages/Expenses";
+import Revenues from "./pages/Revenues";
+import Closing from "./pages/Closing";
 import Tasks from "./pages/Tasks";
 import FixedCharges from "./pages/FixedCharges";
 import VariableCharges from "./pages/VariableCharges";
@@ -34,8 +36,10 @@ function AuthGate() {
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/depenses" replace />} />
         <Route path="/depenses" element={<Expenses />} />
+        <Route path="/recettes" element={<Revenues />} />
         <Route path="/doublons" element={<Duplicates />} />
         <Route path="/pointage" element={<Pointage />} />
+        <Route path="/cloture" element={<Closing />} />
         <Route path="/charges-fixes" element={<FixedCharges />} />
         <Route path="/charges-variables" element={<VariableCharges />} />
         <Route path="/taches" element={<Tasks />} />
